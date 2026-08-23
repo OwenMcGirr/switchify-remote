@@ -29,6 +29,70 @@ function manager(overrides: Record<string, unknown> = {}): BleManager {
 }
 
 describe('ReactNativeBleTransport', () => {
+  it('does not construct the native manager during launch or pre-initialization cleanup', async () => {
+    const factory = jest.fn(() => manager());
+    const transport = new ReactNativeBleTransport(null, 'ios', 10_000, factory);
+
+    expect(factory).not.toHaveBeenCalled();
+    await transport.disconnect();
+    expect(factory).not.toHaveBeenCalled();
+  });
+
+  it('constructs the native manager once at the first Bluetooth operation', async () => {
+    const native = manager();
+    const factory = jest.fn(() => native);
+    const transport = new ReactNativeBleTransport(null, 'ios', 10_000, factory);
+
+    await expect(transport.availability()).resolves.toBe('ready');
+    await expect(transport.availability()).resolves.toBe('ready');
+
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(native.state).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['PoweredOn', 'ready'],
+    ['Unauthorized', 'unauthorized'],
+  ] as const)('waits for a terminal Bluetooth state before reporting %s', async (terminalState, availability) => {
+    let stateListener!: (state: 'PoweredOn' | 'Unauthorized') => void;
+    const remove = jest.fn();
+    const native = manager({
+      state: jest.fn(async () => 'Unknown'),
+      onStateChange: jest.fn((listener: typeof stateListener) => { stateListener = listener; return { remove }; }),
+    });
+    const transport = new ReactNativeBleTransport(native, 'ios');
+
+    const result = transport.availability();
+    await Promise.resolve();
+    stateListener(terminalState);
+
+    await expect(result).resolves.toBe(availability);
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps waiting while the user responds to the native Bluetooth permission prompt', async () => {
+    jest.useFakeTimers();
+    let stateListener!: (state: 'PoweredOn') => void;
+    const remove = jest.fn();
+    const native = manager({
+      state: jest.fn(async () => 'Unknown'),
+      onStateChange: jest.fn((listener: typeof stateListener) => { stateListener = listener; return { remove }; }),
+    });
+    const transport = new ReactNativeBleTransport(native, 'ios', 10);
+    let settled = false;
+
+    const result = transport.availability().then((availability) => { settled = true; return availability; });
+    await Promise.resolve();
+    jest.advanceTimersByTime(60_000);
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    stateListener('PoweredOn');
+    await expect(result).resolves.toBe('ready');
+    expect(remove).toHaveBeenCalledTimes(1);
+    jest.useRealTimers();
+  });
+
   it('requests high Android priority before the MTU and service discovery', async () => {
     const calls: string[] = [];
     const discovered = device({ mtu: 517, discoverAllServicesAndCharacteristics: jest.fn(async () => { calls.push('discover'); return discovered; }) });
