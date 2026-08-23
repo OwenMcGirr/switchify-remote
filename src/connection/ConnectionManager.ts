@@ -34,6 +34,7 @@ export class ConnectionManager {
   #operation = 0;
   #preferredConnect: Promise<void> | null = null;
   #disconnecting: Promise<void> | null = null;
+  #switchIntent = 0;
   #invalidSavedDesktopIds = new Set<string>();
   #profileRecoveryTimers = new Map<ReturnType<typeof setTimeout>, (active: boolean) => void>();
 
@@ -140,6 +141,14 @@ export class ConnectionManager {
     }
   }
 
+  async switchSaved(pc: SavedPc): Promise<void> {
+    const intent = ++this.#switchIntent;
+    if ('desktop' in this.#state && this.#state.desktop.desktopId === pc.desktopId && !this.#disconnecting) return;
+    await this.#beginDisconnect(false);
+    if (intent !== this.#switchIntent) return;
+    await this.connectSaved(pc);
+  }
+
   async connectPreferred(): Promise<void> {
     if (this.#preferredConnect) return this.#preferredConnect;
     const attempt = (async () => {
@@ -210,6 +219,11 @@ export class ConnectionManager {
   }
 
   async disconnect(record = true): Promise<void> {
+    this.#switchIntent += 1;
+    await this.#beginDisconnect(record);
+  }
+
+  async #beginDisconnect(record: boolean): Promise<void> {
     if (this.#disconnecting) return this.#disconnecting;
     this.#preferredConnect = null;
     const attempt = this.#disconnect(record);

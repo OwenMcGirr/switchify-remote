@@ -27,7 +27,9 @@ class FakeTransport implements BleTransport {
   resolvedDesktop: DiscoveredDesktop | null = null;
   resolveError: Error | null = null;
   resolveGate: Promise<void> | null = null;
+  resolveGates = new Map<string, Promise<void>>();
   resolveDesktopIds: string[] = [];
+  resolveStarted: ((desktopId: string) => void) | null = null;
   failConnect = false;
   failReadiness = false;
   connectGate: Promise<void> | null = null;
@@ -42,7 +44,8 @@ class FakeTransport implements BleTransport {
   }; disconnect = async () => undefined; writeFrame = async () => undefined;
   resolveAndConnect = async (desktopId: string) => {
     this.resolveDesktopIds.push(desktopId);
-    await this.resolveGate;
+    this.resolveStarted?.(desktopId);
+    await (this.resolveGates.get(desktopId) ?? this.resolveGate);
     if (this.resolveError) throw this.resolveError;
     if (!this.resolvedDesktop) throw new Error('not found');
     return this.resolvedDesktop;
@@ -290,6 +293,117 @@ describe('connection lifecycle', () => {
     finishCleanup();
     await Promise.all([disconnecting, connecting]);
     expect(transport.resolveDesktopIds).toEqual(['pc-1']);
+  });
+
+  it('runs registered input cleanup before switching to another saved PC', async () => {
+    let finishCleanup!: () => void;
+    const storage = new FakeStorage();
+    storage.saved = [pc('target')];
+    storage.tokens.set('target', 'saved-token');
+    const transport = new FakeTransport();
+    transport.resolvedDesktop = { ...pc('target'), rssi: -40 };
+    transport.failReadiness = true;
+    const manager = new ConnectionManager(transport, storage, new DiagnosticLog(), async () => true);
+    manager.registerCleanup(() => new Promise<void>((resolve) => { finishCleanup = resolve; }));
+
+    const switching = manager.switchSaved(storage.saved[0]!);
+    await waitFor(() => finishCleanup !== undefined);
+    expect(transport.resolveDesktopIds).toEqual([]);
+    finishCleanup();
+    await switching;
+    expect(transport.resolveDesktopIds).toEqual(['target']);
+  });
+
+  it('does not reconnect a queued quick switch after a background disconnect', async () => {
+    let finishCleanup!: () => void;
+    const storage = new FakeStorage();
+    storage.saved = [pc('target')];
+    storage.tokens.set('target', 'saved-token');
+    const transport = new FakeTransport();
+    transport.resolvedDesktop = { ...pc('target'), rssi: -40 };
+    const manager = new ConnectionManager(transport, storage, new DiagnosticLog(), async () => true);
+    manager.registerCleanup(() => new Promise<void>((resolve) => { finishCleanup = resolve; }));
+
+    const switching = manager.switchSaved(storage.saved[0]!);
+    await waitFor(() => finishCleanup !== undefined);
+    const backgrounding = manager.disconnect();
+    finishCleanup();
+    await Promise.all([switching, backgrounding]);
+
+    expect(transport.resolveDesktopIds).toEqual([]);
+    expect(manager.snapshot()).toMatchObject({ kind: 'idle', saved: [{ desktopId: 'target' }] });
+  });
+
+  it('cancels a stale saved-PC lookup when another quick switch wins', async () => {
+    let releaseFirst!: () => void;
+    const storage = new FakeStorage();
+    storage.saved = [pc('first'), pc('second')];
+    storage.tokens.set('first', 'first-token');
+    storage.tokens.set('second', 'second-token');
+    const transport = new FakeTransport();
+    let firstStarted!: () => void;
+    const firstStartedPromise = new Promise<void>((resolve) => { firstStarted = resolve; });
+    transport.resolveStarted = (desktopId) => { if (desktopId === 'first') firstStarted(); };
+    transport.resolveGates.set('first', new Promise<void>((resolve) => { releaseFirst = resolve; }));
+    transport.resolvedDesktop = { ...pc('second'), rssi: -40 };
+    transport.failReadiness = true;
+    const manager = new ConnectionManager(transport, storage, new DiagnosticLog(), async () => true);
+
+    const first = manager.switchSaved(storage.saved[0]!);
+    await firstStartedPromise;
+    const second = manager.switchSaved(storage.saved[1]!);
+    await second;
+    releaseFirst();
+    await first;
+
+    expect(transport.resolveDesktopIds).toEqual(['first', 'second']);
+    expect(manager.snapshot()).toMatchObject({ kind: 'failed', message: 'Could not connect to this PC.' });
+  });
+
+  it('cancels an in-flight switch and reconnects when the displayed PC is selected again', async () => {
+    let finishCleanup!: () => void;
+    let releaseCurrent!: () => void;
+    const storage = new FakeStorage();
+    storage.saved = [pc('current'), pc('other')];
+    storage.tokens.set('current', 'current-token');
+    storage.tokens.set('other', 'other-token');
+    const transport = new FakeTransport();
+    transport.resolveGates.set('current', new Promise<void>((resolve) => { releaseCurrent = resolve; }));
+    transport.resolvedDesktop = { ...pc('current'), rssi: -40 };
+    transport.failReadiness = true;
+    const manager = new ConnectionManager(transport, storage, new DiagnosticLog(), async () => true);
+    manager.registerCleanup(() => new Promise<void>((resolve) => { finishCleanup = resolve; }));
+
+    const currentConnection = manager.connectSaved(storage.saved[0]!);
+    await waitFor(() => manager.snapshot().kind === 'connecting');
+    const switchingAway = manager.switchSaved(storage.saved[1]!);
+    await waitFor(() => finishCleanup !== undefined);
+    const switchingBack = manager.switchSaved(storage.saved[0]!);
+    finishCleanup();
+    releaseCurrent();
+    await Promise.all([currentConnection, switchingAway, switchingBack]);
+
+    expect(transport.resolveDesktopIds).toEqual(['current', 'current']);
+    expect(manager.snapshot()).toMatchObject({ kind: 'failed', message: 'Could not connect to this PC.' });
+  });
+
+  it('ignores a quick-switch request for the active connection target', async () => {
+    let release!: () => void;
+    const storage = new FakeStorage();
+    storage.saved = [pc('current')];
+    storage.tokens.set('current', 'saved-token');
+    const transport = new FakeTransport();
+    transport.resolveGate = new Promise<void>((resolve) => { release = resolve; });
+    transport.resolvedDesktop = { ...pc('current'), rssi: -40 };
+    transport.failReadiness = true;
+    const manager = new ConnectionManager(transport, storage, new DiagnosticLog(), async () => true);
+
+    const connecting = manager.connectSaved(storage.saved[0]!);
+    await waitFor(() => transport.resolveDesktopIds.length === 1);
+    await manager.switchSaved(storage.saved[0]!);
+    expect(transport.resolveDesktopIds).toEqual(['current']);
+    release();
+    await connecting;
   });
 
   it('does not let initial pairing load invalidate an early Remote focus connection', async () => {
