@@ -5,7 +5,7 @@ import type { JsonObject, PointerProfile, ProtocolResponse } from '@/domain/prot
 import { DiagnosticLog } from '@/diagnostics/DiagnosticLog';
 import type { PairingStorage, SavedPc } from '@/storage/PairingStore';
 import type { BleAvailability, BleTransport, DiscoveredDesktop, Unsubscribe } from '@/transport/BleTransport';
-import { ProtocolClient } from './ProtocolClient';
+import { ProtocolClient, ProtocolWriteError } from './ProtocolClient';
 import { pairingVerificationCode } from './verificationCode';
 
 export type ConnectionState =
@@ -37,6 +37,10 @@ export class ConnectionManager {
   #switchIntent = 0;
   #invalidSavedDesktopIds = new Set<string>();
   #profileRecoveryTimers = new Map<ReturnType<typeof setTimeout>, (active: boolean) => void>();
+  #profileRecoveryDeadline: ReturnType<typeof setTimeout> | null = null;
+  #healthTimer: ReturnType<typeof setTimeout> | null = null;
+  #healthProbe: Promise<boolean> | null = null;
+  #protocolOperations = 0;
 
   constructor(
     private readonly transport: BleTransport,
@@ -252,12 +256,23 @@ export class ConnectionManager {
   }
 
   async request(type: string, payload: JsonObject = {}, responseMode: 'ack' | 'none' = 'ack'): Promise<ProtocolResponse | null> {
-    if (!this.#client || !this.#token || !this.#deviceId) return null;
+    await this.#healthProbe;
+    const client = this.#client;
+    const token = this.#token;
+    const deviceId = this.#deviceId;
+    const sourceOperation = this.#operation;
+    const desktop = this.#state.kind === 'connected' ? this.#state.desktop : null;
+    if (!client || !token || !deviceId || !desktop) return null;
+    this.#cancelHealthTimer();
+    this.#protocolOperations += 1;
+    let healthyActivity = false;
+    let shouldProbe = false;
     const id = this.id();
-    const message = authenticatedCommand({ id, deviceId: this.#deviceId, token: this.#token, timestamp: this.now(), type, payload, responseMode });
+    const message = authenticatedCommand({ id, deviceId, token, timestamp: this.now(), type, payload, responseMode });
     try {
-      if (responseMode === 'none') { await this.#client.send(message); return { kind: 'ack', id }; }
-      const response = await this.#client.request(message, id, 5_000);
+      if (responseMode === 'none') { await client.send(message); healthyActivity = true; return { kind: 'ack', id }; }
+      const response = await client.request(message, id, 5_000);
+      healthyActivity = true;
       if (response.kind === 'ack') {
         if (type === 'pointer.speed.set' && typeof payload.scalePercent === 'number' && this.#state.kind === 'connected' && this.#state.profile) {
           this.#set({ ...this.#state, profile: { ...this.#state.profile, capabilities: { ...this.#state.profile.capabilities, pointerSpeed: { ...this.#state.profile.capabilities.pointerSpeed, scalePercent: payload.scalePercent } } } });
@@ -270,7 +285,18 @@ export class ConnectionManager {
         this.diagnostics.add('remote_name_sync_failed', 'warning');
         return response;
       }
-    } catch { /* sanitized below */ }
+    } catch (error) {
+      if (error instanceof ProtocolWriteError || responseMode === 'none') {
+        void this.#unexpectedDisconnect(desktop, sourceOperation);
+      } else {
+        shouldProbe = true;
+      }
+    } finally {
+      this.#protocolOperations -= 1;
+      if (this.#protocolOperations === 0 && this.#current(sourceOperation) && this.#state.kind === 'connected') {
+        this.#scheduleHealth(healthyActivity ? 5_000 : shouldProbe ? 0 : 5_000);
+      }
+    }
     this.diagnostics.add('command_failed', 'warning');
     return null;
   }
@@ -318,7 +344,7 @@ export class ConnectionManager {
     }
     if (response.kind === 'error') this.diagnostics.add('remote_name_sync_failed', 'warning');
     this.#token = token;
-    const profile = await this.#requestPointerProfile(token, operation);
+    const profile = await this.#requestPointerProfile(token, desktop, operation);
     if (!this.#current(operation)) return;
     const saved = { desktopId: desktop.desktopId, displayName: desktop.displayName, platform: desktop.platform, peripheralId: desktop.peripheralId, lastConnectedAt: this.now() };
     await this.storage.save(saved, token);
@@ -327,48 +353,79 @@ export class ConnectionManager {
     this.diagnostics.add('connected');
     if (profile) {
       this.#set({ kind: 'connected', desktop, profile, profileStatus: 'ready' });
+      this.#scheduleHealth();
     } else {
       this.#set({ kind: 'connected', desktop, profile: null, profileStatus: 'recovering' });
       this.diagnostics.add('profile_recovery_started');
-      void this.#recoverPointerProfile(token, operation);
+      void this.#recoverPointerProfile(token, desktop, operation);
     }
   }
 
-  async #requestPointerProfile(token: string, operation: number): Promise<PointerProfile | null> {
+  async #requestPointerProfile(token: string, desktop: DiscoveredDesktop, operation: number): Promise<PointerProfile | null> {
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const profile = await this.#requestPointerProfileAttempt(token, operation);
+      const profile = await this.#requestPointerProfileAttempt(token, desktop, operation);
       if (profile) return profile;
       if (!this.#current(operation)) return null;
     }
     return null;
   }
 
-  async #recoverPointerProfile(token: string, operation: number): Promise<void> {
-    for (const delay of [1_000, 2_000, 4_000]) {
-      if (!await this.#waitForProfileRecovery(delay, operation)) return;
-      const profile = await this.#requestPointerProfileAttempt(token, operation);
-      if (!this.#current(operation)) return;
-      if (profile) {
-        if (this.#state.kind === 'connected' && this.#state.profileStatus === 'recovering') {
-          this.#set({ ...this.#state, profile, profileStatus: 'ready' });
-          this.diagnostics.add('profile_recovered');
+  async #recoverPointerProfile(token: string, desktop: DiscoveredDesktop, operation: number): Promise<void> {
+    const deadline = setTimeout(() => this.#markProfileUnavailable(operation), 22_000);
+    this.#profileRecoveryDeadline = deadline;
+    try {
+      for (const delay of [1_000, 2_000, 4_000]) {
+        if (!await this.#waitForProfileRecovery(delay, operation)) return;
+        if (!await this.#probeHealth(desktop, operation, false) || !this.#profileRecovering(operation)) return;
+        const profile = await this.#requestPointerProfileAttempt(token, desktop, operation);
+        if (!this.#current(operation)) return;
+        if (profile) {
+          if (this.#state.kind === 'connected' && this.#state.profileStatus === 'recovering') {
+            this.#set({ ...this.#state, profile, profileStatus: 'ready' });
+            this.diagnostics.add('profile_recovered');
+            this.#scheduleHealth();
+          }
+          return;
         }
-        return;
+        // A missing profile response is not itself a disconnect signal. Probe
+        // immediately so a lost PC is still detected within the request's
+        // five-second timeout plus the four-second health-check bound.
+        if (!await this.#probeHealth(desktop, operation, false)) return;
+        if (!this.#profileRecovering(operation)) return;
       }
-    }
-    if (this.#current(operation) && this.#state.kind === 'connected' && this.#state.profileStatus === 'recovering') {
-      this.#set({ ...this.#state, profileStatus: 'unavailable' });
-      this.diagnostics.add('profile_recovery_exhausted', 'warning');
+      this.#markProfileUnavailable(operation);
+    } finally {
+      if (this.#profileRecoveryDeadline === deadline) {
+        clearTimeout(deadline);
+        this.#profileRecoveryDeadline = null;
+      }
+      if (this.#current(operation) && this.#state.kind === 'connected' && this.#state.profileStatus === 'unavailable') this.#scheduleHealth();
     }
   }
 
-  async #requestPointerProfileAttempt(token: string, operation: number): Promise<PointerProfile | null> {
+  async #requestPointerProfileAttempt(token: string, desktop: DiscoveredDesktop, operation: number): Promise<PointerProfile | null> {
     if (!this.#current(operation)) return null;
     const [type, payload] = commandPayloads.pointerProfile();
     const id = this.id();
-    const response = await this.#client!.request(authenticatedCommand({ id, deviceId: this.#deviceId!, token, timestamp: this.now(), type, payload }), id, 5_000).catch(() => null);
+    let response: ProtocolResponse | null = null;
+    try {
+      response = await this.#client!.request(authenticatedCommand({ id, deviceId: this.#deviceId!, token, timestamp: this.now(), type, payload }), id, 5_000);
+    } catch (error) {
+      if (error instanceof ProtocolWriteError && this.#current(operation)) void this.#unexpectedDisconnect(desktop, operation);
+    }
     if (!this.#current(operation)) return null;
     return response?.kind === 'pointerProfile' ? response.profile : null;
+  }
+
+  #profileRecovering(operation: number): boolean {
+    return this.#current(operation) && this.#state.kind === 'connected' && this.#state.profileStatus === 'recovering';
+  }
+
+  #markProfileUnavailable(operation: number): void {
+    if (!this.#current(operation) || this.#state.kind !== 'connected' || this.#state.profileStatus !== 'recovering') return;
+    const state = this.#state;
+    this.#set({ ...state, profileStatus: 'unavailable' });
+    this.diagnostics.add('profile_recovery_exhausted', 'warning');
   }
 
   #waitForProfileRecovery(milliseconds: number, operation: number): Promise<boolean> {
@@ -382,6 +439,8 @@ export class ConnectionManager {
   }
 
   #cancelProfileRecovery(): void {
+    if (this.#profileRecoveryDeadline !== null) clearTimeout(this.#profileRecoveryDeadline);
+    this.#profileRecoveryDeadline = null;
     for (const [timer, resolve] of this.#profileRecoveryTimers) {
       clearTimeout(timer);
       resolve(false);
@@ -390,8 +449,11 @@ export class ConnectionManager {
   }
 
   async #unexpectedDisconnect(desktop: DiscoveredDesktop, sourceOperation: number): Promise<void> {
-    if (!this.#current(sourceOperation) || this.#state.kind === 'idle' || this.#state.kind === 'reconnecting') return;
+    if (!this.#current(sourceOperation) || this.#state.kind === 'idle' || this.#state.kind === 'reconnecting' || this.#state.kind === 'failed') return;
     const operation = ++this.#operation;
+    this.#cancelHealthTimer();
+    this.#set({ kind: 'reconnecting', desktop, attempt: 1 });
+    this.diagnostics.add('connection_lost', 'warning');
     await this.#teardownConnection();
     const token = await this.storage.token(desktop.desktopId);
     if (!token || !this.#current(operation)) { if (this.#current(operation)) await this.#fail('Connection to the PC was lost.', operation); return; }
@@ -432,11 +494,49 @@ export class ConnectionManager {
 
   async #teardownConnection(): Promise<void> {
     this.#cancelProfileRecovery();
+    this.#cancelHealthTimer();
     this.#disconnectStop?.(); this.#disconnectStop = null;
     const client = this.#client;
     this.#client = null; this.#token = null;
     if (client) await client.close();
     await this.transport.disconnect().catch(() => undefined);
+  }
+
+  #scheduleHealth(delay = 5_000): void {
+    this.#cancelHealthTimer();
+    if (this.#state.kind !== 'connected' || this.#state.profileStatus === 'recovering') return;
+    const operation = this.#operation;
+    const desktop = this.#state.desktop;
+    this.#healthTimer = setTimeout(() => {
+      this.#healthTimer = null;
+      if (!this.#current(operation) || this.#state.kind !== 'connected') return;
+      if (this.#protocolOperations > 0 || this.#healthProbe) { this.#scheduleHealth(); return; }
+      void this.#probeHealth(desktop, operation, true);
+    }, delay);
+    (this.#healthTimer as unknown as { unref?: () => void }).unref?.();
+  }
+
+  #probeHealth(desktop: DiscoveredDesktop, operation: number, scheduleOnSuccess: boolean): Promise<boolean> {
+    if (this.#healthProbe) return this.#healthProbe;
+    const probe = (async () => {
+      const healthy = await this.transport.verifyConnection(desktop.desktopId).catch(() => false);
+      if (!this.#current(operation) || this.#state.kind !== 'connected') return false;
+      if (healthy) {
+        if (scheduleOnSuccess) this.#scheduleHealth();
+        return true;
+      }
+      this.diagnostics.add('connection_health_failed', 'warning');
+      void this.#unexpectedDisconnect(desktop, operation);
+      return false;
+    })();
+    this.#healthProbe = probe;
+    void probe.finally(() => { if (this.#healthProbe === probe) this.#healthProbe = null; });
+    return probe;
+  }
+
+  #cancelHealthTimer(): void {
+    if (this.#healthTimer !== null) clearTimeout(this.#healthTimer);
+    this.#healthTimer = null;
   }
 
   async #orderedSaved(): Promise<SavedPc[]> {

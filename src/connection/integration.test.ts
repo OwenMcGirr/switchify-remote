@@ -24,7 +24,9 @@ class LoopbackTransport implements BleTransport {
   readonly outbound = new FrameReassembler();
   onFrame: ((frame: string) => void) | null = null;
   onDisconnect: (() => void) | null = null;
+  onNotificationError: ((error: Error) => void) | null = null;
   failWrites = false;
+  failWriteTypes = new Set<string>();
   rejectPairing = false;
   rejectAuthentication = false;
   rejectPingCount = 0;
@@ -41,6 +43,10 @@ class LoopbackTransport implements BleTransport {
   dropResponseCounts = new Map<string, number>();
   invalidResponseCounts = new Map<string, number>();
   hangWrites = new Set<string>();
+  healthChecks = 0;
+  healthResult = true;
+  healthGate: Promise<void> | null = null;
+  disconnectGate: Promise<void> | null = null;
   scan(): Unsubscribe { return () => undefined; }
   resolveAndConnect = async () => {
     this.connectCount += 1;
@@ -48,10 +54,11 @@ class LoopbackTransport implements BleTransport {
     return this.resolvedDesktop;
   };
   connect = async () => undefined;
-  disconnect = async () => undefined;
+  disconnect = async () => { await this.disconnectGate; };
   cancelPendingWrites = async () => undefined;
+  verifyConnection = async () => { this.healthChecks += 1; await this.healthGate; return this.healthResult; };
   notificationsReady = async () => { await this.readinessGate; };
-  subscribe(onFrame: (frameBase64: string) => void): Unsubscribe { this.onFrame = onFrame; return () => { this.onFrame = null; }; }
+  subscribe(onFrame: (frameBase64: string) => void, onError: (error: Error) => void): Unsubscribe { this.onFrame = onFrame; this.onNotificationError = onError; return () => { this.onFrame = null; this.onNotificationError = null; }; }
   subscribeDisconnect(onDisconnect: () => void): Unsubscribe { this.onDisconnect = onDisconnect; return () => { this.onDisconnect = null; }; }
   async writeFrame(raw: string): Promise<void> {
     if (this.failWrites) throw new Error('fixture write failed');
@@ -64,6 +71,7 @@ class LoopbackTransport implements BleTransport {
     this.requests.push(request.type);
     this.requestPayloads.push({ type: request.type, payload: request.payload });
     this.requestIds.push({ id: request.id, type: request.type, authenticated: typeof request.auth === 'string' && request.auth.length > 0 });
+    if (this.failWriteTypes.has(request.type)) throw new Error('fixture request write failed');
     if (this.hangWrites.has(request.type)) await new Promise<void>(() => undefined);
     await this.responseGateQueues.get(request.type)?.shift();
     await this.responseGates.get(request.type);
@@ -263,6 +271,102 @@ describe('pairing and authenticated connection integration', () => {
       expect(new Set(profileRequests.map(({ id }) => id)).size).toBe(3);
       expect(profileRequests.every(({ authenticated }) => authenticated)).toBe(true);
       expect(diagnostics.snapshot().map(({ code }) => code)).toEqual(expect.arrayContaining(['profile_recovery_started', 'profile_recovered']));
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('starts reconnecting immediately when an initial profile request write fails', async () => {
+    const transport = new LoopbackTransport();
+    transport.failWriteTypes.add('pointer.profile');
+    const manager = new ConnectionManager(transport, new MemoryStorage(), new DiagnosticLog(), async () => true, () => 1000, undefined, () => new Promise<void>(() => undefined));
+
+    await manager.connect(desktop);
+
+    expect(manager.snapshot()).toMatchObject({ kind: 'reconnecting', attempt: 1 });
+    expect(transport.requests.filter((type) => type === 'pointer.profile')).toHaveLength(1);
+  });
+
+  it('detects a lost PC while pointer profile recovery is waiting for a response', async () => {
+    jest.useFakeTimers();
+    try {
+      const transport = new LoopbackTransport();
+      transport.dropResponses.add('pointer.profile');
+      const manager = new ConnectionManager(transport, new MemoryStorage(), new DiagnosticLog(), async () => true, () => 1000, undefined, () => new Promise<void>(() => undefined));
+
+      const connecting = manager.connect(desktop);
+      await waitForMicrotasks(() => transport.requests.filter((type) => type === 'pointer.profile').length === 1);
+      await jest.advanceTimersByTimeAsync(5_000);
+      await waitForMicrotasks(() => transport.requests.filter((type) => type === 'pointer.profile').length === 2);
+      await jest.advanceTimersByTimeAsync(5_000);
+      await connecting;
+
+      await jest.advanceTimersByTimeAsync(1_000);
+      await waitForMicrotasks(() => transport.requests.filter((type) => type === 'pointer.profile').length === 3);
+      expect(transport.healthChecks).toBe(1);
+      transport.healthResult = false;
+
+      await jest.advanceTimersByTimeAsync(4_999);
+      expect(manager.snapshot()).toMatchObject({ kind: 'connected', profileStatus: 'recovering' });
+      await jest.advanceTimersByTimeAsync(1);
+      await waitForMicrotasks(() => manager.snapshot().kind === 'reconnecting');
+
+      expect(transport.healthChecks).toBe(2);
+      expect(manager.snapshot()).toMatchObject({ kind: 'reconnecting', attempt: 1 });
+      expect(manager.diagnostics.snapshot().some(({ code }) => code === 'connection_health_failed')).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('starts reconnecting immediately when a recovery profile write fails', async () => {
+    jest.useFakeTimers();
+    try {
+      const transport = new LoopbackTransport();
+      transport.dropResponseCounts.set('pointer.profile', 2);
+      const manager = new ConnectionManager(transport, new MemoryStorage(), new DiagnosticLog(), async () => true, () => 1000, undefined, () => new Promise<void>(() => undefined));
+
+      const connecting = manager.connect(desktop);
+      await waitForMicrotasks(() => transport.requests.filter((type) => type === 'pointer.profile').length === 1);
+      await jest.advanceTimersByTimeAsync(5_000);
+      await waitForMicrotasks(() => transport.requests.filter((type) => type === 'pointer.profile').length === 2);
+      await jest.advanceTimersByTimeAsync(5_000);
+      await connecting;
+      transport.failWriteTypes.add('pointer.profile');
+
+      await jest.advanceTimersByTimeAsync(1_000);
+      await waitForMicrotasks(() => manager.snapshot().kind === 'reconnecting');
+
+      expect(manager.snapshot()).toMatchObject({ kind: 'reconnecting', attempt: 1 });
+      expect(transport.requests.filter((type) => type === 'pointer.profile')).toHaveLength(3);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps the recovering presentation bounded when a healthy probe is slow', async () => {
+    jest.useFakeTimers();
+    try {
+      let releaseHealth!: () => void;
+      const transport = new LoopbackTransport();
+      transport.dropResponses.add('pointer.profile');
+      const manager = new ConnectionManager(transport, new MemoryStorage(), new DiagnosticLog(), async () => true);
+      const connecting = manager.connect(desktop);
+      await waitForMicrotasks(() => transport.requests.filter((type) => type === 'pointer.profile').length === 1);
+      await jest.advanceTimersByTimeAsync(5_000);
+      await waitForMicrotasks(() => transport.requests.filter((type) => type === 'pointer.profile').length === 2);
+      await jest.advanceTimersByTimeAsync(5_000);
+      await connecting;
+      transport.healthGate = new Promise<void>((resolve) => { releaseHealth = resolve; });
+
+      await jest.advanceTimersByTimeAsync(21_999);
+      expect(manager.snapshot()).toMatchObject({ kind: 'connected', profileStatus: 'recovering' });
+      await jest.advanceTimersByTimeAsync(1);
+      expect(manager.snapshot()).toMatchObject({ kind: 'connected', profileStatus: 'unavailable' });
+
+      releaseHealth();
+      await jest.advanceTimersByTimeAsync(0);
+      await manager.disconnect();
     } finally {
       jest.useRealTimers();
     }
@@ -496,6 +600,7 @@ describe('pairing and authenticated connection integration', () => {
     await delayed.connect(desktop);
     delayedTransport.onDisconnect?.();
     await waitFor(() => delayed.snapshot().kind === 'reconnecting');
+    await waitFor(() => typeof resume === 'function');
     const disconnect = delayed.disconnect();
     resume();
     await disconnect;
@@ -552,6 +657,194 @@ describe('pairing and authenticated connection integration', () => {
     await Promise.all([connecting, disconnecting]);
     expect(manager.snapshot().kind).toBe('idle');
   });
+
+  it('shows reconnecting before native-disconnect cleanup finishes and deduplicates signals', async () => {
+    const transport = new LoopbackTransport();
+    const manager = new ConnectionManager(transport, new MemoryStorage(), new DiagnosticLog(), async () => true, () => 1000, undefined, () => new Promise<void>(() => undefined));
+    await manager.connect(desktop);
+    const nativeDisconnect = transport.onDisconnect!;
+    let releaseCleanup!: () => void;
+    transport.disconnectGate = new Promise<void>((resolve) => { releaseCleanup = resolve; });
+
+    nativeDisconnect();
+    nativeDisconnect();
+
+    expect(manager.snapshot()).toMatchObject({ kind: 'reconnecting', desktop: { desktopId: 'pc-1' }, attempt: 1 });
+    expect(manager.diagnostics.snapshot().filter(({ code }) => code === 'connection_lost')).toHaveLength(1);
+    releaseCleanup();
+    transport.disconnectGate = null;
+    await manager.disconnect();
+  });
+
+  it('shows reconnecting before notification-error cleanup finishes', async () => {
+    const transport = new LoopbackTransport();
+    const manager = new ConnectionManager(transport, new MemoryStorage(), new DiagnosticLog(), async () => true, () => 1000, undefined, () => new Promise<void>(() => undefined));
+    await manager.connect(desktop);
+    let releaseCleanup!: () => void;
+    transport.disconnectGate = new Promise<void>((resolve) => { releaseCleanup = resolve; });
+
+    transport.onNotificationError?.(new Error('notification failed'));
+
+    expect(manager.snapshot()).toMatchObject({ kind: 'reconnecting', attempt: 1 });
+    releaseCleanup();
+    transport.disconnectGate = null;
+    await manager.disconnect();
+  });
+
+  it('starts reconnecting immediately after a native command write fails', async () => {
+    const transport = new LoopbackTransport();
+    const manager = new ConnectionManager(transport, new MemoryStorage(), new DiagnosticLog(), async () => true, () => 1000, undefined, () => new Promise<void>(() => undefined));
+    await manager.connect(desktop);
+    transport.failWrites = true;
+
+    await expect(manager.send('mouse.click', { button: 'left' })).resolves.toBe(false);
+
+    expect(manager.snapshot()).toMatchObject({ kind: 'reconnecting', attempt: 1 });
+    expect(manager.diagnostics.snapshot().some(({ code }) => code === 'connection_lost')).toBe(true);
+  });
+
+  it('starts reconnecting when a native command write times out', async () => {
+    jest.useFakeTimers();
+    try {
+      const transport = new LoopbackTransport();
+      const manager = new ConnectionManager(transport, new MemoryStorage(), new DiagnosticLog(), async () => true, () => 1000, undefined, () => new Promise<void>(() => undefined));
+      await connectWithFakeTimers(manager);
+      transport.hangWrites.add('mouse.click');
+      const command = manager.send('mouse.click', { button: 'left' });
+      await waitForMicrotasks(() => transport.requests.filter((type) => type === 'mouse.click').length === 1);
+
+      await jest.advanceTimersByTimeAsync(5_000);
+      await expect(command).resolves.toBe(false);
+
+      expect(manager.snapshot()).toMatchObject({ kind: 'reconnecting', attempt: 1 });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('checks an idle connection after five seconds and reconnects when the check fails', async () => {
+    jest.useFakeTimers();
+    try {
+      const transport = new LoopbackTransport();
+      transport.healthResult = false;
+      const manager = new ConnectionManager(transport, new MemoryStorage(), new DiagnosticLog(), async () => true, () => 1000, undefined, () => new Promise<void>(() => undefined));
+      await connectWithFakeTimers(manager);
+
+      await jest.advanceTimersByTimeAsync(4_999);
+      expect(transport.healthChecks).toBe(0);
+      await jest.advanceTimersByTimeAsync(1);
+
+      expect(transport.healthChecks).toBe(1);
+      expect(manager.snapshot()).toMatchObject({ kind: 'reconnecting', attempt: 1 });
+      expect(manager.diagnostics.snapshot().some(({ code }) => code === 'connection_health_failed')).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('defers the idle check after successful activity and does not overlap a running probe', async () => {
+    jest.useFakeTimers();
+    try {
+      const transport = new LoopbackTransport();
+      const manager = new ConnectionManager(transport, new MemoryStorage(), new DiagnosticLog(), async () => true, () => 1000);
+      await connectWithFakeTimers(manager);
+      await jest.advanceTimersByTimeAsync(4_000);
+      const successfulCommand = manager.send('mouse.click', { button: 'left' });
+      await waitForMicrotasks(() => transport.requests.filter((type) => type === 'mouse.click').length === 1);
+      await expect(successfulCommand).resolves.toBe(true);
+      await jest.advanceTimersByTimeAsync(4_999);
+      expect(transport.healthChecks).toBe(0);
+
+      let releaseHealth!: () => void;
+      transport.healthGate = new Promise<void>((resolve) => { releaseHealth = resolve; });
+      await jest.advanceTimersByTimeAsync(1);
+      expect(transport.healthChecks).toBe(1);
+      const command = manager.send('mouse.click', { button: 'left' });
+      await Promise.resolve();
+      expect(transport.requests.filter((type) => type === 'mouse.click')).toHaveLength(1);
+      releaseHealth();
+      await waitForMicrotasks(() => transport.requests.filter((type) => type === 'mouse.click').length === 2);
+      await expect(command).resolves.toBe(true);
+      expect(transport.requests.filter((type) => type === 'mouse.click')).toHaveLength(2);
+      await manager.disconnect();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('uses a health check to distinguish a dropped response from a lost connection', async () => {
+    jest.useFakeTimers();
+    try {
+      const transport = new LoopbackTransport();
+      const manager = new ConnectionManager(transport, new MemoryStorage(), new DiagnosticLog(), async () => true, () => 1000);
+      await connectWithFakeTimers(manager);
+      transport.dropResponses.add('mouse.click');
+      const command = manager.send('mouse.click', { button: 'left' });
+
+      await jest.advanceTimersByTimeAsync(5_000);
+      await expect(command).resolves.toBe(false);
+      await jest.advanceTimersByTimeAsync(1);
+
+      expect(transport.healthChecks).toBe(1);
+      expect(manager.snapshot().kind).toBe('connected');
+      await manager.disconnect();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('ignores a stale failed health check after explicit disconnect', async () => {
+    jest.useFakeTimers();
+    try {
+      let releaseHealth!: () => void;
+      const transport = new LoopbackTransport();
+      transport.healthResult = false;
+      transport.healthGate = new Promise<void>((resolve) => { releaseHealth = resolve; });
+      const manager = new ConnectionManager(transport, new MemoryStorage(), new DiagnosticLog(), async () => true, () => 1000);
+      await connectWithFakeTimers(manager);
+      await jest.advanceTimersByTimeAsync(5_000);
+      expect(transport.healthChecks).toBe(1);
+
+      await manager.disconnect();
+      releaseHealth();
+      await jest.advanceTimersByTimeAsync(0);
+
+      expect(manager.snapshot().kind).toBe('idle');
+      expect(manager.diagnostics.snapshot().some(({ code }) => code === 'connection_health_failed')).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('ignores a stale failed health check after a replacement connection', async () => {
+    jest.useFakeTimers();
+    try {
+      let releaseHealth!: () => void;
+      const transport = new LoopbackTransport();
+      transport.healthResult = false;
+      transport.healthGate = new Promise<void>((resolve) => { releaseHealth = resolve; });
+      const manager = new ConnectionManager(transport, new MemoryStorage(), new DiagnosticLog(), async () => true, () => 1000);
+      await connectWithFakeTimers(manager);
+      await jest.advanceTimersByTimeAsync(5_000);
+      expect(transport.healthChecks).toBe(1);
+
+      const replacement = { ...desktop, desktopId: 'pc-2', displayName: 'Studio', peripheralId: 'ble-2' };
+      transport.resolvedDesktop = replacement;
+      const connecting = manager.connect(replacement);
+      releaseHealth();
+      await waitForMicrotasks(() => {
+        const state = manager.snapshot();
+        return state.kind === 'connected' && state.desktop.desktopId === 'pc-2';
+      });
+      await connecting;
+      await jest.advanceTimersByTimeAsync(0);
+
+      expect(manager.snapshot()).toMatchObject({ kind: 'connected', desktop: { desktopId: 'pc-2' } });
+      await manager.disconnect();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });
 
 async function waitFor(predicate: () => boolean): Promise<void> {
@@ -568,4 +861,10 @@ async function waitForMicrotasks(predicate: () => boolean): Promise<void> {
     await jest.advanceTimersByTimeAsync(0);
   }
   throw new Error('condition was not reached');
+}
+
+async function connectWithFakeTimers(manager: ConnectionManager): Promise<void> {
+  const connecting = manager.connect(desktop);
+  await waitForMicrotasks(() => manager.snapshot().kind === 'connected');
+  await connecting;
 }
