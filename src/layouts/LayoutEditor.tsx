@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   Alert,
@@ -62,6 +62,10 @@ export function LayoutEditor({
   const bounds = useRef<Rect | null>(null);
   const cells = useRef(new Map<number, View>());
   const rects = useRef(new Map<number, Rect>());
+  const cellRefs = useMemo(() => Array.from({ length: draft.cells.length }, (_, index) => (node: View | null) => {
+    if (node) cells.current.set(index, node);
+    else { cells.current.delete(index); rects.current.delete(index); }
+  }), [draft.cells.length]);
   const actionHeading = useRef<View>(null);
   const heading = useRef<View>(null);
   const focusFrame = useRef<number | null>(null);
@@ -251,6 +255,7 @@ export function LayoutEditor({
             {error ? <AppText>{error}</AppText> : null}
           </View>
           <View
+            testID="layout-editor-viewport"
             ref={viewport}
             style={{ flex: 1 }}
             onLayout={(event) => {
@@ -259,6 +264,7 @@ export function LayoutEditor({
             }}
           >
             <ScrollView
+              testID="layout-editor-scroll"
               ref={scroll}
               pointerEvents={saving ? "none" : "auto"}
               accessibilityElementsHidden={saving}
@@ -456,13 +462,7 @@ export function LayoutEditor({
                                 }}
                               >
                                 <ControlButton
-                                  controlRef={(node) => {
-                                    if (node) cells.current.set(index, node);
-                                    else {
-                                      cells.current.delete(index);
-                                      rects.current.delete(index);
-                                    }
-                                  }}
+                              controlRef={cellRefs[index]!}
                                   label={
                                     control?.label ??
                                     (id ? "Unavailable button" : "Empty")

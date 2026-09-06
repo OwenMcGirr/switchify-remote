@@ -23,11 +23,13 @@ export function SurfaceLayout({
   controls,
   blocked,
   children,
+  customStatus,
 }: {
   surface: LayoutSurface;
   controls: LayoutControl[];
   blocked?: string | null;
   children: ReactNode;
+  customStatus?: ReactNode;
 }) {
   const layouts = useSyncExternalStore(
     layoutStore.subscribe,
@@ -83,6 +85,7 @@ export function SurfaceLayout({
         }}
       />
       {blocked ? <AppText muted>{blocked}</AppText> : null}
+      {layout ? customStatus : null}
       {layout ? (
         <View style={{ gap: spacing.sm }}>
           {Array.from(
@@ -90,9 +93,11 @@ export function SurfaceLayout({
             (_, row) => (
               <View
                 key={row}
+                testID="surface-layout-row"
                 style={{
                   flexDirection: "row",
                   alignItems: "stretch",
+                  minHeight: 58,
                   gap: spacing.sm,
                 }}
               >

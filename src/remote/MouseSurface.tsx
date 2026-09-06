@@ -56,7 +56,7 @@ export function MouseSurface({ session, state, physicalSwitchStopAvailable = tru
     {state.repeat ? <ActionButton icon="stop-circle" label="Stop movement" tone="danger" onPress={() => void session.stopRepeat()} /> : null}
     {state.repeat ? <StatusBadge icon="autorenew" label="Movement is repeating. Use Stop movement or another control to stop." tone="warning" /> : null}
     {Platform.OS === 'android' && !physicalSwitchStopAvailable && profile?.capabilities.mouseRepeat.supported && profile.capabilities.mouseRepeat.enabled ? <Card><AppText muted>Switchify is unavailable. Use a Remote control to stop movement repeat.</AppText></Card> : null}
-    <SurfaceLayout surface="mouse" controls={controls} blocked={state.repeat || state.dragging || state.modifiers.length ? 'Stop movement, end dragging, and release modifiers before editing.' : null}>
+    <SurfaceLayout surface="mouse" controls={controls} customStatus={speed?.supported ? <AppText accessibilityRole="header" variant="heading">Pointer speed · {speed.scalePercent}%</AppText> : null} blocked={state.repeat || state.dragging || state.modifiers.length ? 'Stop movement, end dragging, and release modifiers before editing.' : null}>
     <View style={{ alignItems: 'flex-start', flexDirection: twoPane ? 'row' : 'column', gap: spacing.xl }}>{movement}{secondary}</View>
     </SurfaceLayout>
   </View>;
