@@ -82,6 +82,7 @@ describe('RemoteScreen sticky surface selector', () => {
     const view = await render(<RemoteScreen />);
     expect(view.getByTestId('screen-sticky-accessory')).toBeTruthy();
     expect(view.getByTestId('screen-scroll-to-top-container')).toBeTruthy();
+    expect(view.getByTestId('screen-scroll').props.keyboardShouldPersistTaps).toBe('handled');
     expect(view.getByRole('button', { name: 'Surface' })).toBeTruthy();
     expect(view.getByText('Mouse controls')).toBeTruthy();
   });

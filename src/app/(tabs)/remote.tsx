@@ -48,7 +48,7 @@ export default function RemoteScreen() {
     return <Screen title="Remote" bottomAccessory={deviceSwitcher}><EmptyState icon={unavailablePresentation.icon} title={unavailablePresentation.title} body={unavailablePresentation.body} /></Screen>;
   }
   return (
-    <Screen title="Remote" headerAccessory={<StatusBadge icon="check-circle" label={`Connected · ${connection.desktop.displayName}`} tone="success" />} bottomAccessory={deviceSwitcher} scrollToTop stickyAccessory={<SurfaceSelector selected={preferences.surface} />}>
+    <Screen title="Remote" keyboardShouldPersistTaps="handled" headerAccessory={<StatusBadge icon="check-circle" label={`Connected · ${connection.desktop.displayName}`} tone="success" />} bottomAccessory={deviceSwitcher} scrollToTop stickyAccessory={<SurfaceSelector selected={preferences.surface} />}>
       {preferences.surface === 'mouse' ? <MouseSurface platform={connection.desktop.platform} session={session} state={sessionState} physicalSwitchStopAvailable={bridgeSnapshot.captureAvailable && bridgeSnapshot.externalSwitches.length > 0} /> : null}
       {preferences.surface === 'typing' ? <TypingSurface platform={connection.desktop.platform} physicalSwitchStopAvailable={bridgeSnapshot.captureAvailable && bridgeSnapshot.externalSwitches.length > 0} session={session} mode={preferences.typingMode} draft={preferences.draft} /> : null}
       {preferences.surface === 'window' ? <WindowSurface physicalSwitchStopAvailable={bridgeSnapshot.captureAvailable && bridgeSnapshot.externalSwitches.length > 0} session={session} state={sessionState} platform={connection.desktop.platform} /> : null}

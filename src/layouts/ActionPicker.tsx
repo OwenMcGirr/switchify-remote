@@ -121,6 +121,7 @@ export function ActionPicker({
               placeholderTextColor={colors.textMuted}
               value={query}
               onChangeText={setQuery}
+              disableFullscreenUI
               autoCorrect={false}
               autoCapitalize="none"
               returnKeyType="search"

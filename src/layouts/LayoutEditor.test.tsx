@@ -1,10 +1,14 @@
 import { fireEvent, render, act } from "@testing-library/react-native";
 import { getAction } from "@/remote/actions/catalog";
-import { Alert } from "react-native";
+import { focusAccessibilityTarget } from "@/components/accessibilityFocus";
+import { Alert, AccessibilityInfo } from "react-native";
 import { LayoutEditor } from "./LayoutEditor";
 import { initialLayout } from "./model";
 const mockDimensions = { width: 320, height: 640, scale: 1, fontScale: 1 };
 const mockScrollTo = jest.fn();
+jest.mock("@/components/accessibilityFocus", () => ({
+  focusAccessibilityTarget: jest.fn(),
+}));
 
 jest.mock("react-native", () => {
   const actual = jest.requireActual("react-native");
@@ -509,4 +513,36 @@ it("uses an empty cell as a move destination before considering the picker", asy
   expect(view.queryByText("Choose action")).toBeNull();
   expect(view.getByLabelText("Row 1, column 3: Click")).toBeTruthy();
   expect(command).not.toHaveBeenCalled();
+});
+it("restores focus to the filled cell and announces its assignment after the picker closes", async () => {
+  const frames: FrameRequestCallback[] = [];
+  const frame = jest
+    .spyOn(globalThis, "requestAnimationFrame")
+    .mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+  const announce = jest.spyOn(
+    AccessibilityInfo,
+    "announceForAccessibilityWithOptions",
+  );
+  const view = await setup();
+  await fireEvent.press(view.getByLabelText("Row 1, column 1: Click"));
+  await fireEvent.press(view.getByText("Remove button"));
+  await fireEvent.press(view.getByLabelText("Row 1, column 3: Empty"));
+  await fireEvent.press(view.getByLabelText("Double click"));
+  await act(async () => {
+    frames.at(-1)?.(0);
+  });
+  expect(announce).toHaveBeenLastCalledWith(
+    "Double click assigned to row 1, column 3.",
+    { queue: true },
+  );
+  const target = jest.mocked(focusAccessibilityTarget).mock.calls.at(-1)?.[0];
+  const measured = jest.fn();
+  target?.measureInWindow(measured);
+  expect(measured).toHaveBeenCalledWith(200, 100, 90, 60);
+  expect(view.queryByText("Choose action")).toBeNull();
+  frame.mockRestore();
+  announce.mockRestore();
 });

@@ -14,6 +14,9 @@ it("searches descriptive names, categories and keywords without invoking an acti
     />,
   );
   expect(view.getByText("Row 2, column 3")).toBeTruthy();
+  expect(view.getByLabelText("Search actions").props.disableFullscreenUI).toBe(
+    true,
+  );
   await fireEvent.changeText(
     view.getByLabelText("Search actions"),
     "ARROW LEFT",

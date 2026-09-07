@@ -245,6 +245,10 @@ it("keeps live typing mounted and sends no commands while editing or saving keys
   const count = send.mock.calls.length;
   await fireEvent.press(view.getByLabelText("Edit PC keys section"));
   await fireEvent.press(view.getByText("Add row at end"));
+  await fireEvent.press(view.getAllByLabelText(/Row \d+, column \d+: Empty/)[0]!);
+  await fireEvent.changeText(view.getByLabelText("Search actions"), "close window");
+  await fireEvent.press(view.getByLabelText("Close window"));
+  expect(send).toHaveBeenCalledTimes(count);
   await fireEvent.press(view.getByText("Save layout"));
   expect(view.getByLabelText("Live text").props.value).toBe("fixture text");
   expect(send).toHaveBeenCalledTimes(count);
