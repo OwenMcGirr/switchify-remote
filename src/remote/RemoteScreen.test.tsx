@@ -1,4 +1,4 @@
-import { render } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 import { createElement } from 'react';
 import { Text } from 'react-native';
 
@@ -129,4 +129,18 @@ describe('RemoteScreen sticky surface selector', () => {
     expect(view.getByText('Reconnecting to Office PC, attempt 1.')).toBeTruthy();
     expect(view.queryByTestId('screen-scroll-to-top-container')).toBeNull();
   });
+});
+
+it('starts outside edit mode again after disconnection', async () => {
+  mockConnection = { kind: 'connected', desktop, profile, profileStatus: 'ready' };
+  mockPreferences.surface = 'mouse';
+  const view = await render(<RemoteScreen />);
+  await fireEvent.press(view.getByLabelText('Layout edit mode'));
+  expect(view.getByLabelText('Layout edit mode').props.accessibilityState.selected).toBe(true);
+  mockConnection = { kind: 'idle', saved: [] };
+  await view.rerender(<RemoteScreen />);
+  expect(view.queryByLabelText('Layout edit mode')).toBeNull();
+  mockConnection = { kind: 'connected', desktop, profile, profileStatus: 'ready' };
+  await view.rerender(<RemoteScreen />);
+  expect(view.getByLabelText('Layout edit mode').props.accessibilityState.selected).toBe(false);
 });

@@ -2,9 +2,15 @@
 
 Record the app commit, Switchify PC release, phone model/OS, and desktop platform for each run. Never paste pairing credentials or typed personal content into the record.
 
+## Layout edit mode checks
+
+Start a connected remote in normal mode. Confirm section headings, cards, and remote controls are present while section edit buttons and editing-only restrictions are absent. Toggle Edit layout beside Surface, verify selected state/Done editing and section edit actions, then use Done editing to hide them. Scroll and confirm the toggle stays with the pinned selector. Repeat in portrait/landscape and large text on phone/tablet widths, checking wrapping and 48-point targets with TalkBack, VoiceOver and switch navigation. Forwarding and disconnected/recovering screens must omit the toggle. Reconnect or change PCs and confirm edit mode starts off.
+
+Toggle without changing/sending live or draft typing content, executing PC input, or modifying saved layouts/preferences. Verify section editors retain their Save/Cancel/Reset behavior and focus return while the mode stays enabled. During repeat, drag, held modifiers or live Enter delivery, turn the mode on and confirm section edit actions remain disabled with explanations; Stop movement and recovery stay available.
+
 ## Searchable action picker checks
 
-Tap an empty cell and confirm Choose action identifies the destination. Search mixed-case names, categories, and keywords; distinguish pointer movement from arrow keys. Select an unsupported action, confirm its explanation, immediate assignment and focus return, then Save and verify the runtime button stays disabled. Confirm no commands execute during selection. Test no matches, all actions placed, Close, scrim, Android Back and accessibility escape. A move-mode destination must move the button without opening the picker.
+Enable Edit layout, open a section editor, then tap an empty cell and confirm Choose action identifies the destination. Search mixed-case names, categories, and keywords; distinguish pointer movement from arrow keys. Select an unsupported action, confirm its explanation, immediate assignment and focus return, then Save and verify the runtime button stays disabled. Confirm no commands execute during selection. Test no matches, all actions placed, Close, scrim, Android Back and accessibility escape. A move-mode destination must move the button without opening the picker.
 
 With the software keyboard open, both orientations, and 100%, 150%, and 200% text, scroll to all results and Close. Check TalkBack/VoiceOver focus containment and assignment announcements, Switch Access/Switch Control navigation, and focus restoration to the filled cell. Place monitor, movement/scroll, modifier, window and key actions on another surface; verify current capabilities/labels after reconnect, normal key commands outside live Typing, live Enter submission, and Stop movement on Typing and Window. Draft actions placed in PC keys must be disabled in live mode. Preserve active user typing/layout drafts by using an isolated simulator or a separate test installation.
 

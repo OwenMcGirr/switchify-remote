@@ -1,4 +1,10 @@
-import { act, fireEvent, render } from "@testing-library/react-native";
+import {
+  act,
+  fireEvent,
+  render as renderNative,
+} from "@testing-library/react-native";
+import type { ReactElement } from "react";
+import { LayoutEditModeContext } from "./LayoutEditMode";
 import { Alert, StyleSheet } from "react-native";
 import { MouseSurface } from "@/remote/MouseSurface";
 import { WindowSurface } from "@/remote/WindowSurface";
@@ -31,6 +37,17 @@ jest.mock("react-native-gesture-handler", () => {
     Gesture: { Pan: gesture },
   };
 });
+
+const render = (element: ReactElement) =>
+  renderNative(element, {
+    wrapper: ({ children }) => (
+      <LayoutEditModeContext.Provider
+        value={{ enabled: true, toggle: jest.fn() }}
+      >
+        {children}
+      </LayoutEditModeContext.Provider>
+    ),
+  });
 
 beforeEach(async () => {
   for (const surface of ["mouse", "typing", "window"] as const)
@@ -245,8 +262,13 @@ it("keeps live typing mounted and sends no commands while editing or saving keys
   const count = send.mock.calls.length;
   await fireEvent.press(view.getByLabelText("Edit PC keys section"));
   await fireEvent.press(view.getByText("Add row at end"));
-  await fireEvent.press(view.getAllByLabelText(/Row \d+, column \d+: Empty/)[0]!);
-  await fireEvent.changeText(view.getByLabelText("Search actions"), "close window");
+  await fireEvent.press(
+    view.getAllByLabelText(/Row \d+, column \d+: Empty/)[0]!,
+  );
+  await fireEvent.changeText(
+    view.getByLabelText("Search actions"),
+    "close window",
+  );
   await fireEvent.press(view.getByLabelText("Close window"));
   expect(send).toHaveBeenCalledTimes(count);
   await fireEvent.press(view.getByText("Save layout"));
@@ -269,14 +291,12 @@ it.each(["typing", "window"] as const)(
       null,
     );
     const stop = jest.spyOn(session, "stopRepeat").mockResolvedValue();
-    jest
-      .spyOn(session, "snapshot")
-      .mockReturnValue({
-        repeat: "mouse.scroll",
-        dragging: false,
-        modifiers: [],
-        streamOpen: false,
-      });
+    jest.spyOn(session, "snapshot").mockReturnValue({
+      repeat: "mouse.scroll",
+      dragging: false,
+      modifiers: [],
+      streamOpen: false,
+    });
     const view = await render(
       surface === "typing" ? (
         <TypingSurface session={session} mode="draft" draft="fixture" />

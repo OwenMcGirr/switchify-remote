@@ -11,6 +11,7 @@ import { AppText } from "@/components/AppText";
 import { ResponsiveGrid } from "@/components/ResponsiveGrid";
 import { focusAccessibilityTarget } from "@/components/accessibilityFocus";
 import { useLayout, useTheme } from "@/theme/ThemeContext";
+import { useLayoutEditMode } from "./LayoutEditMode";
 import { layoutStore } from "./LayoutStore";
 import type { ActionOption } from "@/remote/actions/catalog";
 import { LayoutEditor } from "./LayoutEditor";
@@ -36,6 +37,7 @@ export function SurfaceLayout({
   blocked?: string | null;
   title?: string;
 }) {
+  const { enabled: editing } = useLayoutEditMode();
   const layouts = useSyncExternalStore(
     layoutStore.subscribe,
     layoutStore.snapshot,
@@ -53,10 +55,10 @@ export function SurfaceLayout({
   const frame = useRef<number | null>(null);
   const mounted = useRef(true);
   const opening = useRef(false);
-  const blockedRef = useRef(blocked);
+  const editableRef = useRef(editing && !blocked);
   useEffect(() => {
-    blockedRef.current = blocked;
-  }, [blocked]);
+    editableRef.current = editing && !blocked;
+  }, [blocked, editing]);
   const { spacing } = useTheme();
   const { fontScale } = useLayout();
   useEffect(() => {
@@ -94,38 +96,40 @@ export function SurfaceLayout({
       <AppText accessibilityRole="header" variant="heading">
         {title ?? definition.title}
       </AppText>
-      <ControlButton
-        controlRef={trigger}
-        label="Edit section"
-        accessibilityLabel={`Edit ${definition.title} section`}
-        icon="edit"
-        compact
-        disabled={!!blocked}
-        onPress={() => {
-          if (opening.current || blockedRef.current) return;
-          opening.current = true;
-          void layoutStore.load().then(() => {
-            opening.current = false;
-            if (!mounted.current || blockedRef.current) return;
-            const defaults = sectionDefault(
-              definition,
-              width,
-              fontScale,
-              spacing.sm,
-            );
-            const current = layoutStore.snapshot()[surface]?.[section];
-            const customized = validSectionLayout(surface, section, current);
-            setEditor({
-              initial: customized ? current : defaults,
-              defaults,
-              customized,
+      {editing ? (
+        <ControlButton
+          controlRef={trigger}
+          label="Edit section"
+          accessibilityLabel={`Edit ${definition.title} section`}
+          icon="edit"
+          compact
+          disabled={!!blocked}
+          onPress={() => {
+            if (opening.current || !editableRef.current) return;
+            opening.current = true;
+            void layoutStore.load().then(() => {
+              opening.current = false;
+              if (!mounted.current || !editableRef.current) return;
+              const defaults = sectionDefault(
+                definition,
+                width,
+                fontScale,
+                spacing.sm,
+              );
+              const current = layoutStore.snapshot()[surface]?.[section];
+              const customized = validSectionLayout(surface, section, current);
+              setEditor({
+                initial: customized ? current : defaults,
+                defaults,
+                customized,
+              });
+              setEditorSession((value) => value + 1);
+              setVisible(true);
             });
-            setEditorSession((value) => value + 1);
-            setVisible(true);
-          });
-        }}
-      />
-      {blocked ? <AppText muted>{blocked}</AppText> : null}
+          }}
+        />
+      ) : null}
+      {editing && blocked ? <AppText muted>{blocked}</AppText> : null}
       {layout ? (
         <ScrollView
           horizontal
