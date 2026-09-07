@@ -143,7 +143,7 @@ it("keeps measured drop targets through drag-start rendering and swaps on drop",
     gesture()._onStart({ absoluteX: 45, absoluteY: 130 });
   });
   await act(async () => {
-    gesture()._onEnd({ absoluteX: 145, absoluteY: 130 });
+    gesture()._onEnd({ absoluteX: 145, absoluteY: 130 }, true);
   });
   await fireEvent.press(view.getByText("Save layout"));
   expect(view.onSave).toHaveBeenCalledWith({
@@ -183,10 +183,13 @@ it.each(["outside", "rotation", "cancel"] as const)(
         gesture()._onFinalize();
       });
     await act(async () => {
-      gesture()._onEnd({
-        absoluteX: reason === "outside" ? 900 : 145,
-        absoluteY: 130,
-      });
+      gesture()._onEnd(
+        {
+          absoluteX: reason === "outside" ? 900 : 145,
+          absoluteY: 130,
+        },
+        true,
+      );
     });
     await fireEvent.press(view.getByText("Save layout"));
     expect(view.onSave).toHaveBeenCalledWith(initialLayout(["a", "b"]));
@@ -346,10 +349,13 @@ it.each(["row", "column"] as const)(
       });
     });
     await act(async () => {
-      gesture()._onEnd({
-        absoluteX: axis === "row" ? 45 : 260,
-        absoluteY: axis === "row" ? 250 : 130,
-      });
+      gesture()._onEnd(
+        {
+          absoluteX: axis === "row" ? 45 : 260,
+          absoluteY: axis === "row" ? 250 : 130,
+        },
+        true,
+      );
     });
     await fireEvent.press(view.getByText("Save layout"));
     expect(view.onSave).toHaveBeenCalledWith({
@@ -406,3 +412,30 @@ it("leaves adaptive defaults untouched on an unchanged Save", async () => {
   expect(onSave).not.toHaveBeenCalled();
   expect(onClose).toHaveBeenCalledTimes(1);
 });
+
+it.each(["row", "column", "cell"] as const)(
+  "does not commit a cancelled active %s gesture when native onEnd arrives before finalize",
+  async (kind) => {
+    const view = await setup();
+    await fireEvent.press(view.getByText("Add row at end"));
+    const gesture = () =>
+      view.getAllByTestId("layout-drag-cell")[
+        kind === "column" ? 0 : kind === "row" ? 3 : 4
+      ]!.props.gesture;
+    await act(async () => {
+      gesture()._onStart({ absoluteX: 45, absoluteY: 130 });
+    });
+    await act(async () => {
+      gesture()._onUpdate({ absoluteX: 145, absoluteY: 250 });
+    });
+    await act(async () => {
+      gesture()._onEnd({ absoluteX: 145, absoluteY: 250 }, false);
+      gesture()._onFinalize();
+    });
+    await fireEvent.press(view.getByText("Save layout"));
+    expect(view.onSave).toHaveBeenCalledWith({
+      columns: 3,
+      cells: ["a", "b", null, null, null, null],
+    });
+  },
+);

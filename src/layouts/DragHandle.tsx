@@ -26,7 +26,10 @@ export function DragHandle({
     .runOnJS(true)
     .onStart((point) => start(selection, point))
     .onUpdate(update)
-    .onEnd(end)
+    .onEnd((point, success) => {
+      if (success) end(point);
+      else cancel();
+    })
     .onFinalize(cancel);
   return <GestureDetector gesture={gesture}>{children}</GestureDetector>;
 }
