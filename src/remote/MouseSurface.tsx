@@ -43,9 +43,10 @@ export function MouseSurface({
         }}
       >
         <View
+          testID="mouse-movement"
           style={{
-            flex: 1,
-            maxWidth: 400,
+            flex: twoPane ? 1 : undefined,
+            maxWidth: twoPane ? 400 : undefined,
             minWidth: twoPane ? 320 : undefined,
             width: "100%",
           }}

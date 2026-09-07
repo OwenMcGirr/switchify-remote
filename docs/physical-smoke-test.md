@@ -52,3 +52,7 @@ Run the matrix on a physical Android phone and iPhone against current Switchify 
 10. Export diagnostics and verify that no typed content, token, authentication proof, nonce, or verification code appears.
 
 The development-preview PR remains draft until all four platform pairings are recorded successfully.
+
+### Movement width regression
+
+On Android and iOS, check a saved three-column Movement grid at large text in portrait and landscape. When Mouse sections stack, Movement must use the available content width so its last column is visible when the grid fits. Narrow screens must still allow horizontal scrolling without changing saved rows, columns, or actions. At normal text size on wide screens, retain the two-pane arrangement.

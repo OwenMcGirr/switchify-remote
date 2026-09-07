@@ -1,5 +1,6 @@
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { RenderResult } from '@testing-library/react-native';
+import * as Theme from '@/theme/ThemeContext';
 import { Platform, StyleSheet } from 'react-native';
 import type { ConnectionManager } from '@/connection/ConnectionManager';
 import type { PointerProfile } from '@/domain/protocol/types';
@@ -25,6 +26,7 @@ describe('capability-driven remote surfaces', () => {
   });
 
   afterEach(() => {
+    jest.restoreAllMocks();
     Object.defineProperty(Platform, 'OS', { configurable: true, value: originalPlatform });
   });
 
@@ -36,6 +38,21 @@ describe('capability-driven remote surfaces', () => {
     expect(view.getByLabelText('Move up').props.accessibilityState.disabled).toBe(true);
     expect(view.getByLabelText('Faster').props.accessibilityState.disabled).toBe(true);
     expect(StyleSheet.flatten(view.getByTestId('mouse-secondary').props.style).width).toBe('100%');
+  });
+
+  it.each([
+    [1143, 808, 1.5, undefined],
+    [808, 1143, 1.5, undefined],
+    [390, 844, 1, undefined],
+    [1143, 808, 1, 400],
+  ])('sizes Movement for %s × %s at text scale %s', async (width, height, fontScale, maxWidth) => {
+    jest.spyOn(Theme, 'useLayout').mockReturnValue(Theme.classifyLayout(width, height, fontScale));
+    const session = new RemoteSession(manager, profile(['mouse.click']));
+    const view = await render(<MouseSurface session={session} state={session.snapshot()} />);
+    const style = StyleSheet.flatten(view.getByTestId('mouse-movement').props.style);
+    expect(style.width).toBe('100%');
+    expect(style.maxWidth).toBe(maxWidth);
+    expect(style.flex).toBe(maxWidth === undefined ? undefined : 1);
   });
 
   it('falls back to draft typing when streams are unsupported', async () => {
@@ -284,6 +301,7 @@ describe('capability-driven remote surfaces', () => {
     ['android', true],
     ['ios', false],
   ] as const)('shows Android-only physical-switch guidance on %s while preserving Stop movement', async (platform, showsGuidance) => {
+    jest.restoreAllMocks();
     Object.defineProperty(Platform, 'OS', { configurable: true, value: platform });
     const session = new RemoteSession(
       { send: jest.fn(async () => true) } as unknown as ConnectionManager,
