@@ -19,13 +19,13 @@ export function RemoteToolbar({ selected }: { selected: RemoteSurface }) {
         gap: spacing.sm,
       }}
     >
-      <View style={{ flexGrow: 1, flexBasis: 200, maxWidth: "100%" }}>
+      <View style={{ flexGrow: 1, flexBasis: 160, maxWidth: "100%" }}>
         <SurfaceSelector selected={selected} />
       </View>
       {selected !== "forwarding" ? (
         <View
           style={{
-            flexBasis: 120 * Math.max(1, fontScale),
+            flexBasis: 180 * Math.max(1, fontScale),
             flexGrow: 0,
             maxWidth: "100%",
           }}
