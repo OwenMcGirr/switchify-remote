@@ -7,7 +7,10 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  SafeAreaProvider,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { AppText } from "@/components/AppText";
 import { ActionButton } from "@/components/ActionButton";
 import { focusAccessibilityTarget } from "@/components/accessibilityFocus";
@@ -15,19 +18,30 @@ import { useTheme } from "@/theme/ThemeContext";
 import { searchActions, type ActionOption } from "@/remote/actions/catalog";
 
 /** Render within the editor's native modal, so iOS never stacks native modals. */
-export function ActionPicker({
-  row,
-  column,
-  options,
-  onSelect,
-  onClose,
-}: {
+type ActionPickerProps = {
   row: number;
   column: number;
   options: readonly ActionOption[];
   onSelect(id: string): void;
   onClose(): void;
-}) {
+};
+export function ActionPicker(props: ActionPickerProps) {
+  // Native modals can rotate independently of the presenting screen on iOS.
+  return (
+    <SafeAreaProvider
+      style={{ position: "absolute", top: 0, bottom: 0, left: 0, right: 0 }}
+    >
+      <ActionPickerContent {...props} />
+    </SafeAreaProvider>
+  );
+}
+function ActionPickerContent({
+  row,
+  column,
+  options,
+  onSelect,
+  onClose,
+}: ActionPickerProps) {
   const { colors, radii, spacing, typography } = useTheme();
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState("");
