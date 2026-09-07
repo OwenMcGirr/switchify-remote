@@ -2,11 +2,15 @@
 
 Record the app commit, Switchify PC release, phone model/OS, and desktop platform for each run. Never paste pairing credentials or typed personal content into the record.
 
-## Button layout editor checks
+## Section layout editor checks
 
-On Android and iOS, customize Mouse, Typing, and Window at 100%, 150%, and 200% text in both themes and orientations. Move into empty cells, swap occupied cells, drag near scroll edges, and rotate during a drag. Confirm cancelled drags do not change the grid. Insert and remove rows and columns, cancel an occupied deletion, restore a removed button, Save, restart, and verify positions. Confirm Reset returns to the original arrangement only after Save and Cancel preserves the saved layout.
+On Android and iOS, edit each visible section of Mouse, Typing, and Window independently at 100%, 150%, and 200% text, in both themes and orientations. Verify fixed section boundaries: Movement, Clicks and scroll, Pointer speed, monitors; Draft actions and PC keys; Modifiers, Windows, Shortcuts, monitors. Opening and saving untouched defaults must not change their responsive grids.
 
-Repeat editing without gestures using TalkBack, VoiceOver, Switch Access, and Switch Control. Confirm modal containment, cell labels, row-major scanning, destination announcements, focus return, complete labels, and 48-point targets. Check the last row clears system navigation. Confirm editing sends no PC input, retains live typing text, and is unavailable during active repeat, drag, modifiers, or Enter delivery. Verify Stop movement and typing recovery actions remain available after customization. Reconnect to a PC with fewer capabilities and verify unavailable buttons stay disabled in their saved positions.
+Drag buttons to empty and occupied cells. Drag whole rows and columns forwards and backwards using the handles, including tracks with empty cells. Check insertion indicators and both edge-scroll directions. Release outside, cancel, rotate, resize text, and background during a drag; none may commit the move. Insert rows and columns before/after and at the end, confirm occupied deletion, restore removed buttons, and verify no duplicates or buttons from other sections are offered.
+
+Save one section, restart, and verify its exact grid plus all neighboring sections, cards, headings, help text and dynamic status. Reset restores only that section after Save; Cancel preserves its saved layout. Test saved geometry and horizontal scrolling on narrow screens. Hide/show Draft actions by changing typing mode; reconnect with fewer capabilities and return to the original PC; hidden section layouts must survive.
+
+Repeat all editing without gestures using TalkBack, VoiceOver, Switch Access, and Switch Control. Confirm modal containment, descriptive cell/track labels, logical scanning, destination announcements, focus return, complete labels, and 48-point targets. Confirm editing sends no PC input, retains live typing text, and is unavailable during active repeat, drag, modifiers, or Enter delivery. Stop movement and typing recovery remain outside customization.
 
 Run the matrix on a physical Android phone and iPhone against current Switchify PC on both Windows and macOS:
 

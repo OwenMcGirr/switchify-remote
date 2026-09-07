@@ -5,24 +5,43 @@ import { initialLayout } from "./model";
 const mockDimensions = { width: 320, height: 640, scale: 1, fontScale: 1 };
 const mockScrollTo = jest.fn();
 
-jest.mock('react-native', () => {
-  const actual = jest.requireActual('react-native');
-  const React = jest.requireActual('react');
+jest.mock("react-native", () => {
+  const actual = jest.requireActual("react-native");
+  const React = jest.requireActual("react");
   const mocked = Object.create(actual);
-  Object.defineProperty(mocked, 'useWindowDimensions', { value: () => mockDimensions });
-  Object.defineProperty(mocked, 'ScrollView', { value: React.forwardRef(function MockScrollView(props: Record<string, unknown>, ref: unknown) {
-    React.useImperativeHandle(ref, () => ({ scrollTo: mockScrollTo }), []);
-    return React.createElement(actual.ScrollView, props);
-  }) });
-  Object.defineProperty(mocked, 'View', { value: React.forwardRef(function MockView(props: Record<string, unknown>, ref: unknown) {
-    React.useImperativeHandle(ref, () => ({ measureInWindow: (done: (...values: number[]) => void) => done(0, 0, 300, 500) }), []);
-    return React.createElement(actual.View, props);
-  }) });
+  Object.defineProperty(mocked, "useWindowDimensions", {
+    value: () => mockDimensions,
+  });
+  Object.defineProperty(mocked, "ScrollView", {
+    value: React.forwardRef(function MockScrollView(
+      props: Record<string, unknown>,
+      ref: unknown,
+    ) {
+      React.useImperativeHandle(ref, () => ({ scrollTo: mockScrollTo }), []);
+      return React.createElement(actual.ScrollView, props);
+    }),
+  });
+  Object.defineProperty(mocked, "View", {
+    value: React.forwardRef(function MockView(
+      props: Record<string, unknown>,
+      ref: unknown,
+    ) {
+      React.useImperativeHandle(
+        ref,
+        () => ({
+          measureInWindow: (done: (...values: number[]) => void) =>
+            done(0, 0, 300, 500),
+        }),
+        [],
+      );
+      return React.createElement(actual.View, props);
+    }),
+  });
   return mocked;
 });
 
 jest.mock("react-native-gesture-handler", () => {
-  const React = jest.requireActual('react');
+  const React = jest.requireActual("react");
   const { View } = jest.requireActual("react-native");
   const gesture = () => {
     const g: Record<string, unknown> = {};
@@ -35,26 +54,58 @@ jest.mock("react-native-gesture-handler", () => {
       "onEnd",
       "onFinalize",
     ])
-      g[name] = (value: unknown) => { g[`_${name}`] = value; return g; };
+      g[name] = (value: unknown) => {
+        g[`_${name}`] = value;
+        return g;
+      };
     return g;
   };
   return {
     GestureHandlerRootView: View,
-    GestureDetector: ({ gesture, children }: { gesture: unknown; children: unknown }) => React.createElement(View, { testID: 'layout-drag-cell', gesture }, children),
+    GestureDetector: ({
+      gesture,
+      children,
+    }: {
+      gesture: unknown;
+      children: unknown;
+    }) =>
+      React.createElement(
+        View,
+        { testID: "layout-drag-cell", gesture },
+        children,
+      ),
     Gesture: { Pan: gesture },
   };
 });
 
-jest.mock('@/components/ControlButton', () => {
-  const React = jest.requireActual('react');
-  const actual = jest.requireActual('@/components/ControlButton');
-  return { ControlButton: (props: Record<string, unknown>) => {
-    React.useImperativeHandle(props.controlRef, () => ({ measureInWindow: (done: (...values: number[]) => void) => {
-      const match = String(props.accessibilityLabel).match(/Row (\d+), column (\d+)/);
-      done(match ? (Number(match[2]) - 1) * 100 : 0, match ? Number(match[1]) * 100 : 0, 90, 60);
-    } }), [props.accessibilityLabel]);
-    return React.createElement(actual.ControlButton, { ...props, controlRef: undefined });
-  } };
+jest.mock("@/components/ControlButton", () => {
+  const React = jest.requireActual("react");
+  const actual = jest.requireActual("@/components/ControlButton");
+  return {
+    ControlButton: (props: Record<string, unknown>) => {
+      React.useImperativeHandle(
+        props.controlRef,
+        () => ({
+          measureInWindow: (done: (...values: number[]) => void) => {
+            const match = String(props.accessibilityLabel).match(
+              /Row (\d+), column (\d+)/,
+            );
+            done(
+              match ? (Number(match[2]) - 1) * 100 : 0,
+              match ? Number(match[1]) * 100 : 0,
+              90,
+              60,
+            );
+          },
+        }),
+        [props.accessibilityLabel],
+      );
+      return React.createElement(actual.ControlButton, {
+        ...props,
+        controlRef: undefined,
+      });
+    },
+  };
 });
 
 const command = jest.fn();
@@ -66,6 +117,9 @@ const setup = async (onSave = jest.fn().mockResolvedValue(undefined)) => {
   const onClose = jest.fn();
   const view = await render(
     <LayoutEditor
+      title="Test section"
+      defaultLayout={initialLayout(["a", "b"])}
+      initiallyCustomized
       visible
       controls={controls}
       initial={initialLayout(["a", "b"])}
@@ -76,42 +130,103 @@ const setup = async (onSave = jest.fn().mockResolvedValue(undefined)) => {
   );
   return { ...view, onSave, onClose };
 };
-beforeEach(() => { jest.clearAllMocks(); mockDimensions.width = 320; mockDimensions.height = 640; });
-it('keeps measured drop targets through drag-start rendering and swaps on drop', async () => {
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockDimensions.width = 320;
+  mockDimensions.height = 640;
+});
+it("keeps measured drop targets through drag-start rendering and swaps on drop", async () => {
   const view = await setup();
-  const gesture = () => view.getAllByTestId('layout-drag-cell')[0]!.props.gesture;
-  await act(async () => { gesture()._onStart({ absoluteX: 45, absoluteY: 130 }); });
-  await act(async () => { gesture()._onEnd({ absoluteX: 145, absoluteY: 130 }); });
-  await fireEvent.press(view.getByText('Save layout'));
-  expect(view.onSave).toHaveBeenCalledWith({ columns: 3, cells: ['b', 'a', null] });
+  const gesture = () =>
+    view.getAllByTestId("layout-drag-cell")[4]!.props.gesture;
+  await act(async () => {
+    gesture()._onStart({ absoluteX: 45, absoluteY: 130 });
+  });
+  await act(async () => {
+    gesture()._onEnd({ absoluteX: 145, absoluteY: 130 });
+  });
+  await fireEvent.press(view.getByText("Save layout"));
+  expect(view.onSave).toHaveBeenCalledWith({
+    columns: 3,
+    cells: ["b", "a", null],
+  });
   expect(command).not.toHaveBeenCalled();
 });
-it.each(['outside', 'rotation', 'cancel'] as const)('does not save a move after %s interrupts dragging', async (reason) => {
-  const view = await setup();
-  const gesture = () => view.getAllByTestId('layout-drag-cell')[0]!.props.gesture;
-  await act(async () => { gesture()._onStart({ absoluteX: 45, absoluteY: 130 }); });
-  if (reason === 'rotation') {
-    mockDimensions.width = 640; mockDimensions.height = 320;
-    await view.rerender(<LayoutEditor visible controls={controls} initial={initialLayout(['a', 'b'])} onSave={view.onSave} onClose={view.onClose} onDismiss={jest.fn()} />);
-  }
-  if (reason === 'cancel') await act(async () => { gesture()._onFinalize(); });
-  await act(async () => { gesture()._onEnd({ absoluteX: reason === 'outside' ? 900 : 145, absoluteY: 130 }); });
-  await fireEvent.press(view.getByText('Save layout'));
-  expect(view.onSave).toHaveBeenCalledWith(initialLayout(['a', 'b']));
-});
-it('auto-scrolls near an edge and cancels its animation frame on drag cancellation', async () => {
+it.each(["outside", "rotation", "cancel"] as const)(
+  "does not save a move after %s interrupts dragging",
+  async (reason) => {
+    const view = await setup();
+    const gesture = () =>
+      view.getAllByTestId("layout-drag-cell")[4]!.props.gesture;
+    await act(async () => {
+      gesture()._onStart({ absoluteX: 45, absoluteY: 130 });
+    });
+    if (reason === "rotation") {
+      mockDimensions.width = 640;
+      mockDimensions.height = 320;
+      await view.rerender(
+        <LayoutEditor
+          title="Test section"
+          defaultLayout={initialLayout(["a", "b"])}
+          initiallyCustomized
+          visible
+          controls={controls}
+          initial={initialLayout(["a", "b"])}
+          onSave={view.onSave}
+          onClose={view.onClose}
+          onDismiss={jest.fn()}
+        />,
+      );
+    }
+    if (reason === "cancel")
+      await act(async () => {
+        gesture()._onFinalize();
+      });
+    await act(async () => {
+      gesture()._onEnd({
+        absoluteX: reason === "outside" ? 900 : 145,
+        absoluteY: 130,
+      });
+    });
+    await fireEvent.press(view.getByText("Save layout"));
+    expect(view.onSave).toHaveBeenCalledWith(initialLayout(["a", "b"]));
+  },
+);
+it("auto-scrolls near an edge and cancels its animation frame on drag cancellation", async () => {
   const frames: FrameRequestCallback[] = [];
-  const frame = jest.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => { frames.push(callback); return frames.length; });
-  const cancel = jest.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(() => undefined);
+  const frame = jest
+    .spyOn(globalThis, "requestAnimationFrame")
+    .mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+  const cancel = jest
+    .spyOn(globalThis, "cancelAnimationFrame")
+    .mockImplementation(() => undefined);
   const view = await setup();
-  const gesture = () => view.getAllByTestId('layout-drag-cell')[0]!.props.gesture;
-  await act(async () => { gesture()._onStart({ absoluteX: 45, absoluteY: 130 }); });
-  await fireEvent(view.getByTestId('layout-editor-scroll'), 'contentSizeChange', 300, 2000);
-  await act(async () => { gesture()._onUpdate({ absoluteX: 45, absoluteY: 490 }); frames.shift()!(16); });
+  const gesture = () =>
+    view.getAllByTestId("layout-drag-cell")[4]!.props.gesture;
+  await act(async () => {
+    gesture()._onStart({ absoluteX: 45, absoluteY: 130 });
+  });
+  await fireEvent(
+    view.getByTestId("layout-editor-scroll"),
+    "contentSizeChange",
+    300,
+    2000,
+  );
+  await act(async () => {
+    gesture()._onUpdate({ absoluteX: 45, absoluteY: 490 });
+    frames.shift()!(16);
+  });
   expect(mockScrollTo).toHaveBeenCalledWith({ y: 6, animated: false });
-  await act(async () => { gesture()._onFinalize(); });
+  await act(async () => {
+    gesture()._onFinalize();
+  });
   expect(cancel).toHaveBeenCalled();
-  await view.unmount(); frame.mockRestore(); cancel.mockRestore();
+  await view.unmount();
+  frame.mockRestore();
+  cancel.mockRestore();
 });
 it("moves and swaps using accessible cells without dispatching a command", async () => {
   const view = await setup();
@@ -188,4 +303,106 @@ it("blocks duplicate saves and handles unmount during saving", async () => {
   await view.unmount();
   await act(async () => resolve());
   expect(view.onClose).not.toHaveBeenCalled();
+});
+
+it.each(["row", "column"] as const)(
+  "reorders a whole %s using handles without commands",
+  async (axis) => {
+    const view = await setup();
+    await fireEvent.press(view.getByText("Add row at end"));
+    await fireEvent.press(
+      view.getByText(axis === "row" ? "Row 1" : "Column 1"),
+    );
+    await fireEvent.press(view.getByText(`Move ${axis}`));
+    await fireEvent.press(
+      view.getByText(axis === "row" ? "Row 2" : "Column 3"),
+    );
+    await fireEvent.press(view.getByText("Save layout"));
+    expect(view.onSave).toHaveBeenCalledWith({
+      columns: 3,
+      cells:
+        axis === "row"
+          ? [null, null, null, "a", "b", null]
+          : ["b", null, "a", null, null, null],
+    });
+    expect(command).not.toHaveBeenCalled();
+  },
+);
+it.each(["row", "column"] as const)(
+  "drags a whole %s into a new position",
+  async (axis) => {
+    const view = await setup();
+    await fireEvent.press(view.getByText("Add row at end"));
+    const gesture = () =>
+      view.getAllByTestId("layout-drag-cell")[axis === "row" ? 3 : 0]!.props
+        .gesture;
+    await act(async () => {
+      gesture()._onStart({ absoluteX: 45, absoluteY: 130 });
+    });
+    await act(async () => {
+      gesture()._onUpdate({
+        absoluteX: axis === "row" ? 45 : 260,
+        absoluteY: axis === "row" ? 250 : 130,
+      });
+    });
+    await act(async () => {
+      gesture()._onEnd({
+        absoluteX: axis === "row" ? 45 : 260,
+        absoluteY: axis === "row" ? 250 : 130,
+      });
+    });
+    await fireEvent.press(view.getByText("Save layout"));
+    expect(view.onSave).toHaveBeenCalledWith({
+      columns: 3,
+      cells:
+        axis === "row"
+          ? [null, null, null, "a", "b", null]
+          : ["b", null, "a", null, null, null],
+    });
+  },
+);
+it("inserts after a selected track and confirms occupied column removal", async () => {
+  const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+  const view = await setup();
+  await fireEvent.press(view.getByText("Column 1"));
+  await fireEvent.press(view.getByText("Insert column after"));
+  await fireEvent.press(view.getByText("Column 1"));
+  await fireEvent.press(view.getByText("Remove column"));
+  expect(alert).toHaveBeenLastCalledWith(
+    "Remove column?",
+    expect.any(String),
+    expect.any(Array),
+  );
+  await act(async () => {
+    alert.mock.calls
+      .at(-1)?.[2]
+      ?.find((button) => button.text === "Remove")
+      ?.onPress?.();
+  });
+  await fireEvent.press(view.getByText("Save layout"));
+  expect(view.onSave).toHaveBeenCalledWith({
+    columns: 3,
+    cells: [null, "b", null],
+  });
+  alert.mockRestore();
+});
+it("leaves adaptive defaults untouched on an unchanged Save", async () => {
+  const onSave = jest.fn();
+  const onClose = jest.fn();
+  const view = await render(
+    <LayoutEditor
+      title="Keys"
+      visible
+      controls={controls}
+      initial={initialLayout(["a", "b"])}
+      defaultLayout={initialLayout(["a", "b"])}
+      initiallyCustomized={false}
+      onSave={onSave}
+      onClose={onClose}
+      onDismiss={jest.fn()}
+    />,
+  );
+  await fireEvent.press(view.getByText("Save layout"));
+  expect(onSave).not.toHaveBeenCalled();
+  expect(onClose).toHaveBeenCalledTimes(1);
 });

@@ -2,13 +2,15 @@
 
 Switchify Remote is designed for VoiceOver, TalkBack, iOS Switch Control, and Android Switch Access.
 
-## Custom button layouts
+## Custom section layouts
 
-Mouse, Typing, and Window offer Edit layout when movement repeat, dragging, held modifiers, and live Enter delivery are inactive. The editor supports long-press dragging and cell actions for moving, swapping, adding, and removing buttons without sending PC commands. Select a cell to insert or remove a row or column at that position. Occupied row/column removal asks for confirmation.
+Mouse, Typing, and Window provide an Edit section action for each visible section when movement repeat, dragging, held modifiers, and live Enter delivery are inactive. Sections retain their headings, cards, help text, dynamic status, order, and capability/mode visibility. Draft text, live input, recovery actions, and Stop movement remain outside editable grids.
 
-Layouts retain explicit positions across rotation and text scaling. Labels wrap, rows grow vertically, and targets remain at least 48 points. Empty cells and row wrappers add no scan stops during normal use; buttons scan in row-major order. Unavailable capabilities keep their disabled positions. The typing field, mode selector, status and recovery actions, and Stop movement remain outside the editable grid.
+Each section editor offers only its own existing buttons, with one copy of each. Select an empty cell to add a removed button. Button drags swap occupied cells or move into empty cells. Row and column handles move complete tracks, including empty cells, with insertion indicators and edge scrolling. Select a cell or track to insert before/after or remove a row/column. Occupied removal asks for confirmation. Limits are 20 rows and four columns, with at least one of each.
 
-The editor is the only accessibility context while open. Cell actions restore focus to the edited cell, moves announce their destination once, and dismissing the editor returns focus to Edit layout. All operations must be possible with TalkBack, VoiceOver, Switch Access, and Switch Control without dragging. Save persists locally; Cancel discards only after confirmation when changes exist. Reset to default takes effect on Save.
+All operations have tap-based alternatives: select a button or track, choose Move, and select its destination cell or track. The editor is the only accessibility context while open. Labels identify row and column positions, moves announce their destination once, and closing returns focus to the section’s Edit action. Validate TalkBack, VoiceOver, Switch Access, and Switch Control without dragging. Empty runtime cells preserve spacing without becoming scan stops. Controls remain at least 48 points, labels wrap, and horizontal scrolling preserves custom columns at large text sizes and on narrow screens. Rotation, text resizing, backgrounding, and cancelled/outside drops must not commit a drag.
+
+Save persists only the selected section and preserves neighboring sections. An unchanged Save leaves adaptive defaults intact. Cancel asks before discarding edits; Reset restores the section’s original responsive layout only on Save. Failed saves retain the draft and previous saved value for retry. Editing dispatches no PC commands and preserves live typing text.
 
 - Every interactive target is at least 48 by 48 logical points and has a concise accessible name.
 - First-run setup explains the Remote before asking for Bluetooth. Its two steps expose headings and "Step 1 of 2"/"Step 2 of 2" announcements in logical reading order, remain scrollable at large text sizes, and never move focus to a permission prompt until Allow Bluetooth is selected.
