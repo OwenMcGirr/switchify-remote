@@ -325,3 +325,18 @@ it.each(["typing", "window"] as const)(
     session.dispose();
   },
 );
+
+it("lets the first keyboard tap reach a customized Typing action", async () => {
+  await layoutStore.save("typing", "keys", { columns: 1, cells: ["key.Enter"] });
+  const enter = jest.fn();
+  const view = await render(
+    <SurfaceLayout surface="typing" section="keys" controls={[
+      { id: "key.Enter", label: "Enter", onPress: enter },
+    ]} />,
+  );
+  // The nested native responder must not consume the first tap to dismiss text input.
+  expect(view.getByTestId("section-grid-scroll").props.keyboardShouldPersistTaps).toBe("handled");
+  expect(enter).not.toHaveBeenCalled();
+  await fireEvent.press(view.getByLabelText("Enter"));
+  expect(enter).toHaveBeenCalledTimes(1);
+});

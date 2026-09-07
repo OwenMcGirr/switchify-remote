@@ -133,6 +133,7 @@ export function SurfaceLayout({
       {layout ? (
         <ScrollView
           horizontal
+          keyboardShouldPersistTaps="handled"
           testID="section-grid-scroll"
           contentContainerStyle={{ minWidth: "100%" }}
         >
