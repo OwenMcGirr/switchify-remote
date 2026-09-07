@@ -2,11 +2,17 @@
 
 Record the app commit, Switchify PC release, phone model/OS, and desktop platform for each run. Never paste pairing credentials or typed personal content into the record.
 
+## Searchable action picker checks
+
+Tap an empty cell and confirm Choose action identifies the destination. Search mixed-case names, categories, and keywords; distinguish pointer movement from arrow keys. Select an unsupported action, confirm its explanation, immediate assignment and focus return, then Save and verify the runtime button stays disabled. Confirm no commands execute during selection. Test no matches, all actions placed, Close, scrim, Android Back and accessibility escape. A move-mode destination must move the button without opening the picker.
+
+With the software keyboard open, both orientations, and 100%, 150%, and 200% text, scroll to all results and Close. Check TalkBack/VoiceOver focus containment and assignment announcements, Switch Access/Switch Control navigation, and focus restoration to the filled cell. Place monitor, movement/scroll, modifier, window and key actions on another surface; verify current capabilities/labels after reconnect, normal key commands outside live Typing, live Enter submission, and Stop movement on Typing and Window. Draft actions placed in PC keys must be disabled in live mode. Preserve active user typing/layout drafts by using an isolated simulator or a separate test installation.
+
 ## Section layout editor checks
 
 On Android and iOS, edit each visible section of Mouse, Typing, and Window independently at 100%, 150%, and 200% text, in both themes and orientations. Verify fixed section boundaries: Movement, Clicks and scroll, Pointer speed, monitors; Draft actions and PC keys; Modifiers, Windows, Shortcuts, monitors. Opening and saving untouched defaults must not change their responsive grids.
 
-Drag buttons to empty and occupied cells. Drag whole rows and columns forwards and backwards using the handles, including tracks with empty cells. Check insertion indicators and both edge-scroll directions. Release outside, cancel, rotate, resize text, and background during a drag; none may commit the move. Insert rows and columns before/after and at the end, confirm occupied deletion, restore removed buttons, and verify no duplicates or buttons from other sections are offered.
+Drag buttons to empty and occupied cells. Drag whole rows and columns forwards and backwards using the handles, including tracks with empty cells. Check insertion indicators and both edge-scroll directions. Release outside, cancel, rotate, resize text, and background during a drag; none may commit the move. Insert rows and columns before/after and at the end, confirm occupied deletion, restore removed buttons, and verify already-placed actions are excluded while actions from other surfaces are offered. Draft actions must be absent on Mouse and Window.
 
 Save one section, restart, and verify its exact grid plus all neighboring sections, cards, headings, help text and dynamic status. Reset restores only that section after Save; Cancel preserves its saved layout. Test saved geometry and horizontal scrolling on narrow screens. Hide/show Draft actions by changing typing mode; reconnect with fewer capabilities and return to the original PC; hidden section layouts must survive.
 

@@ -26,24 +26,15 @@ it("captures responsive rows in each section instead of flattening the surface",
     sectionDefault(getSection("mouse", "movement")!, 300, 2, 8).columns,
   ).toBe(3);
 });
-it("validates controls against their section, not merely their surface", () => {
+it("accepts catalog actions across sections but enforces placement restrictions", () => {
   expect(
     validSectionLayout("mouse", "clicks", {
       columns: 1,
       cells: ["click.double"],
     }),
   ).toBe(true);
-  expect(
-    validSectionLayout("mouse", "speed", {
-      columns: 1,
-      cells: ["click.double"],
-    }),
-  ).toBe(false);
-  expect(
-    validSectionLayout("window", "modifiers", {
-      columns: 1,
-      cells: ["key.Enter"],
-    }),
-  ).toBe(false);
+  expect(validSectionLayout("mouse", "speed", { columns: 1, cells: ["click.double"] })).toBe(true);
+  expect(validSectionLayout("window", "modifiers", { columns: 1, cells: ["key.Enter"] })).toBe(true);
+  expect(validSectionLayout("window", "modifiers", { columns: 1, cells: ["draft.clear"] })).toBe(false);
   expect(getSection("mouse", "__proto__")).toBeUndefined();
 });

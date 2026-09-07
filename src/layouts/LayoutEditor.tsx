@@ -5,6 +5,7 @@ import {
   Animated,
   AppState,
   Modal,
+  Keyboard,
   ScrollView,
   View,
   useWindowDimensions,
@@ -25,15 +26,19 @@ import {
   MAX_ROWS,
   type ButtonLayout,
   type LayoutAxis,
+  type LayoutSurface,
 } from "./model";
 import { dropTarget, type DropTarget, type Rect, type Selection } from "./drag";
 import { DragHandle } from "./DragHandle";
+import { ActionPicker } from "./ActionPicker";
+import { canPlaceAction, getAction } from "@/remote/actions/catalog";
 
 type Point = { absoluteX: number; absoluteY: number };
 const keyFor = (selection: Selection) => `${selection.kind}-${selection.index}`;
 export function LayoutEditor({
   visible,
   title,
+  surface,
   initial,
   defaultLayout,
   initiallyCustomized,
@@ -44,6 +49,7 @@ export function LayoutEditor({
 }: {
   visible: boolean;
   title: string;
+  surface: LayoutSurface;
   initial: ButtonLayout;
   defaultLayout: ButtonLayout;
   initiallyCustomized: boolean;
@@ -57,6 +63,7 @@ export function LayoutEditor({
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pickerCell, setPickerCell] = useState<number | null>(null);
   const [selected, setSelected] = useState<Selection | null>(null);
   const [moving, setMoving] = useState(false);
   const [dragging, setDragging] = useState<Selection | null>(null);
@@ -282,6 +289,13 @@ export function LayoutEditor({
         finishMove(selected, selection.index);
       return;
     }
+    if (selection.kind === "cell" && draft.cells[selection.index] === null) {
+      cancelDrag();
+      setSelected(null);
+      setMoving(false);
+      setPickerCell(selection.index);
+      return;
+    }
     setSelected(selection);
     setMoving(false);
     scroll.current?.scrollTo({ y: 0, animated: !reducedMotion });
@@ -296,6 +310,53 @@ export function LayoutEditor({
         ? (nodes.current.get(keyFor(previous)) ?? heading.current)
         : heading.current,
     );
+  };
+  const closePicker = () => {
+    const index = pickerCell;
+    setPickerCell(null);
+    Keyboard.dismiss();
+    focus(() =>
+      index === null
+        ? heading.current
+        : (nodes.current.get(`cell-${index}`) ?? heading.current),
+    );
+  };
+  const pickerOptions = controls
+    .filter(
+      (control) =>
+        canPlaceAction(control.id, surface) &&
+        !draft.cells.includes(control.id),
+    )
+    .map((control) => {
+      const definition = getAction(control.id)!;
+      return (
+        control.option ?? {
+          id: definition.id,
+          name: definition.name,
+          category: definition.category,
+          keywords: definition.keywords,
+        }
+      );
+    });
+  const assignAction = (id: string) => {
+    if (
+      pickerCell === null ||
+      savingRef.current ||
+      !visible ||
+      draft.cells[pickerCell] !== null ||
+      !canPlaceAction(id, surface) ||
+      draft.cells.includes(id) ||
+      !controls.some((control) => control.id === id)
+    ) {
+      closePicker();
+      return;
+    }
+    const option = pickerOptions.find((option) => option.id === id);
+    change(setCell(draft, pickerCell, id));
+    announce(
+      `${option?.name ?? "Action"} assigned to row ${Math.floor(pickerCell / draft.columns) + 1}, column ${(pickerCell % draft.columns) + 1}.`,
+    );
+    closePicker();
   };
   const dismiss = () => {
     if (savingRef.current) return;
@@ -349,7 +410,7 @@ export function LayoutEditor({
     if (!insert && occupied)
       Alert.alert(
         `Remove ${axis}?`,
-        "Buttons in it will return to the available buttons list.",
+        "Removed actions will be available in Choose action again.",
         [
           { text: "Cancel", style: "cancel" },
           { text: "Remove", style: "destructive", onPress: apply },
@@ -375,16 +436,22 @@ export function LayoutEditor({
     : "";
   return (
     <Modal
+      testID="section-editor-modal"
       visible={visible}
       animationType={reducedMotion ? "none" : "slide"}
       supportedOrientations={["portrait", "landscape"]}
-      onRequestClose={dismiss}
+      onRequestClose={pickerCell === null ? dismiss : closePicker}
       onDismiss={onDismiss}
       onShow={() => focus(() => heading.current)}
     >
       <GestureHandlerRootView style={{ flex: 1 }}>
         <View
-          accessibilityViewIsModal
+          accessibilityViewIsModal={pickerCell === null}
+          accessibilityElementsHidden={pickerCell !== null}
+          importantForAccessibility={
+            pickerCell !== null ? "no-hide-descendants" : "auto"
+          }
+          pointerEvents={pickerCell !== null ? "none" : "auto"}
           onAccessibilityEscape={dismiss}
           style={{
             flex: 1,
@@ -496,42 +563,12 @@ export function LayoutEditor({
                               closeActions();
                             }}
                           />
-                        ) : (
-                          <>
-                            {controls
-                              .filter(
-                                (control) => !draft.cells.includes(control.id),
-                              )
-                              .map((control) => (
-                                <ControlButton
-                                  key={control.id}
-                                  label={`Add ${control.accessibilityLabel ?? control.label}`}
-                                  onPress={() => {
-                                    change(
-                                      setCell(
-                                        draft,
-                                        selected.index,
-                                        control.id,
-                                      ),
-                                    );
-                                    closeActions();
-                                  }}
-                                />
-                              ))}
-                            {controls.every((control) =>
-                              draft.cells.includes(control.id),
-                            ) ? (
-                              <AppText muted>
-                                All section buttons are already placed.
-                              </AppText>
-                            ) : null}
-                          </>
-                        )
+                        ) : null
                       ) : null}
                       {(["row", "column"] as const)
                         .filter(
                           (axis) =>
-                            selected.kind === "cell" || selected.kind === axis,
+                            selected.kind === axis,
                         )
                         .map((axis) => {
                           const index =
@@ -802,6 +839,15 @@ export function LayoutEditor({
             </Animated.View>
           ) : null}
         </View>
+        {pickerCell !== null ? (
+          <ActionPicker
+            row={Math.floor(pickerCell / draft.columns) + 1}
+            column={(pickerCell % draft.columns) + 1}
+            options={pickerOptions}
+            onSelect={assignAction}
+            onClose={closePicker}
+          />
+        ) : null}
       </GestureHandlerRootView>
     </Modal>
   );

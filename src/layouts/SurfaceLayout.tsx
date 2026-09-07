@@ -12,12 +12,14 @@ import { ResponsiveGrid } from "@/components/ResponsiveGrid";
 import { focusAccessibilityTarget } from "@/components/accessibilityFocus";
 import { useLayout, useTheme } from "@/theme/ThemeContext";
 import { layoutStore } from "./LayoutStore";
+import type { ActionOption } from "@/remote/actions/catalog";
 import { LayoutEditor } from "./LayoutEditor";
 import { type ButtonLayout, type LayoutSurface } from "./model";
 import { getSection, sectionDefault, validSectionLayout } from "./sections";
 
 export type LayoutControl = ComponentProps<typeof ControlButton> & {
   id: string;
+  option?: ActionOption;
 };
 
 /** Owns only one section; cards, surface structure and safety controls stay mounted. */
@@ -186,6 +188,7 @@ export function SurfaceLayout({
         <LayoutEditor
           key={editorSession}
           title={definition.title}
+          surface={surface}
           visible={visible}
           controls={controls}
           initial={editor.initial}

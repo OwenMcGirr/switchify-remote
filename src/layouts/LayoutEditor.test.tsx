@@ -1,4 +1,5 @@
 import { fireEvent, render, act } from "@testing-library/react-native";
+import { getAction } from "@/remote/actions/catalog";
 import { Alert } from "react-native";
 import { LayoutEditor } from "./LayoutEditor";
 import { initialLayout } from "./model";
@@ -110,19 +111,20 @@ jest.mock("@/components/ControlButton", () => {
 
 const command = jest.fn();
 const controls = [
-  { id: "a", label: "Click", onPress: command },
-  { id: "b", label: "Enter", onPress: command },
+  { id: "click.double", label: "Click", onPress: command },
+  { id: "key.Enter", label: "Enter", onPress: command },
 ];
 const setup = async (onSave = jest.fn().mockResolvedValue(undefined)) => {
   const onClose = jest.fn();
   const view = await render(
     <LayoutEditor
+      surface="mouse"
       title="Test section"
-      defaultLayout={initialLayout(["a", "b"])}
+      defaultLayout={initialLayout(["click.double", "key.Enter"])}
       initiallyCustomized
       visible
       controls={controls}
-      initial={initialLayout(["a", "b"])}
+      initial={initialLayout(["click.double", "key.Enter"])}
       onSave={onSave}
       onClose={onClose}
       onDismiss={jest.fn()}
@@ -148,7 +150,7 @@ it("keeps measured drop targets through drag-start rendering and swaps on drop",
   await fireEvent.press(view.getByText("Save layout"));
   expect(view.onSave).toHaveBeenCalledWith({
     columns: 3,
-    cells: ["b", "a", null],
+    cells: ["key.Enter", "click.double", null],
   });
   expect(command).not.toHaveBeenCalled();
 });
@@ -166,12 +168,13 @@ it.each(["outside", "rotation", "cancel"] as const)(
       mockDimensions.height = 320;
       await view.rerender(
         <LayoutEditor
+          surface="mouse"
           title="Test section"
-          defaultLayout={initialLayout(["a", "b"])}
+          defaultLayout={initialLayout(["click.double", "key.Enter"])}
           initiallyCustomized
           visible
           controls={controls}
-          initial={initialLayout(["a", "b"])}
+          initial={initialLayout(["click.double", "key.Enter"])}
           onSave={view.onSave}
           onClose={view.onClose}
           onDismiss={jest.fn()}
@@ -192,7 +195,9 @@ it.each(["outside", "rotation", "cancel"] as const)(
       );
     });
     await fireEvent.press(view.getByText("Save layout"));
-    expect(view.onSave).toHaveBeenCalledWith(initialLayout(["a", "b"]));
+    expect(view.onSave).toHaveBeenCalledWith(
+      initialLayout(["click.double", "key.Enter"]),
+    );
   },
 );
 it("auto-scrolls near an edge and cancels its animation frame on drag cancellation", async () => {
@@ -239,7 +244,7 @@ it("moves and swaps using accessible cells without dispatching a command", async
   await fireEvent.press(view.getByText("Save layout"));
   expect(view.onSave).toHaveBeenCalledWith({
     columns: 3,
-    cells: ["b", "a", null],
+    cells: ["key.Enter", "click.double", null],
   });
   expect(command).not.toHaveBeenCalled();
 });
@@ -248,11 +253,11 @@ it("removes a control and restores it from an empty cell", async () => {
   await fireEvent.press(view.getByLabelText("Row 1, column 1: Click"));
   await fireEvent.press(view.getByText("Remove button"));
   await fireEvent.press(view.getByLabelText("Row 1, column 3: Empty"));
-  await fireEvent.press(view.getByText("Add Click"));
+  await fireEvent.press(view.getByText("Double click"));
   await fireEvent.press(view.getByText("Save layout"));
   expect(view.onSave).toHaveBeenCalledWith({
     columns: 3,
-    cells: [null, "b", "a"],
+    cells: [null, "key.Enter", "click.double"],
   });
 });
 it("keeps the draft after a sanitized save failure and retries", async () => {
@@ -274,7 +279,7 @@ it("confirms discarding edits and removing occupied rows", async () => {
   const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
   const view = await setup();
   await fireEvent.press(view.getByText("Add row at end"));
-  await fireEvent.press(view.getByLabelText("Row 1, column 1: Click"));
+  await fireEvent.press(view.getByText("Row 1"));
   await fireEvent.press(view.getByText("Remove row"));
   expect(alert).toHaveBeenLastCalledWith(
     "Remove row?",
@@ -325,8 +330,8 @@ it.each(["row", "column"] as const)(
       columns: 3,
       cells:
         axis === "row"
-          ? [null, null, null, "a", "b", null]
-          : ["b", null, "a", null, null, null],
+          ? [null, null, null, "click.double", "key.Enter", null]
+          : ["key.Enter", null, "click.double", null, null, null],
     });
     expect(command).not.toHaveBeenCalled();
   },
@@ -362,8 +367,8 @@ it.each(["row", "column"] as const)(
       columns: 3,
       cells:
         axis === "row"
-          ? [null, null, null, "a", "b", null]
-          : ["b", null, "a", null, null, null],
+          ? [null, null, null, "click.double", "key.Enter", null]
+          : ["key.Enter", null, "click.double", null, null, null],
     });
   },
 );
@@ -388,7 +393,7 @@ it("inserts after a selected track and confirms occupied column removal", async 
   await fireEvent.press(view.getByText("Save layout"));
   expect(view.onSave).toHaveBeenCalledWith({
     columns: 3,
-    cells: [null, "b", null],
+    cells: [null, "key.Enter", null],
   });
   alert.mockRestore();
 });
@@ -397,11 +402,12 @@ it("leaves adaptive defaults untouched on an unchanged Save", async () => {
   const onClose = jest.fn();
   const view = await render(
     <LayoutEditor
+      surface="mouse"
       title="Keys"
       visible
       controls={controls}
-      initial={initialLayout(["a", "b"])}
-      defaultLayout={initialLayout(["a", "b"])}
+      initial={initialLayout(["click.double", "key.Enter"])}
+      defaultLayout={initialLayout(["click.double", "key.Enter"])}
       initiallyCustomized={false}
       onSave={onSave}
       onClose={onClose}
@@ -435,7 +441,72 @@ it.each(["row", "column", "cell"] as const)(
     await fireEvent.press(view.getByText("Save layout"));
     expect(view.onSave).toHaveBeenCalledWith({
       columns: 3,
-      cells: ["a", "b", null, null, null, null],
+      cells: ["click.double", "key.Enter", null, null, null, null],
     });
   },
 );
+
+it("opens a contained picker, filters placed actions and assigns a cross-surface action only to the draft", async () => {
+  const extra = {
+    id: "window.closeFocused",
+    label: "Close",
+    onPress: command,
+    disabled: true,
+    option: {
+      ...getAction("window.closeFocused")!,
+      explanation: "Not supported by this PC.",
+    },
+  };
+  const onSave = jest.fn(async () => undefined);
+  const view = await render(
+    <LayoutEditor
+      surface="mouse"
+      title="Test"
+      defaultLayout={initialLayout(["click.double", "key.Enter"])}
+      initiallyCustomized
+      visible
+      controls={[...controls, extra]}
+      initial={initialLayout(["click.double", "key.Enter"])}
+      onSave={onSave}
+      onClose={jest.fn()}
+      onDismiss={jest.fn()}
+    />,
+  );
+  await fireEvent.press(view.getByLabelText("Row 1, column 3: Empty"));
+  expect(view.getByText("Choose action")).toBeTruthy();
+  expect(view.queryByText("Save layout")).toBeNull();
+  expect(view.queryByLabelText("Double click")).toBeNull();
+  expect(view.getByText("Not supported by this PC.")).toBeTruthy();
+  await fireEvent.changeText(
+    view.getByLabelText("Search actions"),
+    "close window",
+  );
+  await fireEvent.press(view.getByLabelText("Close window"));
+  expect(view.queryByText("Choose action")).toBeNull();
+  expect(view.getByLabelText("Row 1, column 3: Close")).toBeTruthy();
+  expect(onSave).not.toHaveBeenCalled();
+  expect(command).not.toHaveBeenCalled();
+  await fireEvent.press(view.getByText("Save layout"));
+  expect(onSave).toHaveBeenCalledWith({
+    columns: 3,
+    cells: ["click.double", "key.Enter", "window.closeFocused"],
+  });
+});
+it("Android Back closes the picker without closing the editor or changing its cell", async () => {
+  const view = await setup();
+  await fireEvent.press(view.getByLabelText("Row 1, column 3: Empty"));
+  await fireEvent(view.getByTestId("section-editor-modal"), "requestClose");
+  expect(view.queryByText("Choose action")).toBeNull();
+  expect(view.getByLabelText("Row 1, column 3: Empty")).toBeTruthy();
+  expect(view.onClose).not.toHaveBeenCalled();
+  expect(command).not.toHaveBeenCalled();
+});
+it("uses an empty cell as a move destination before considering the picker", async () => {
+  const view = await setup();
+  await fireEvent.press(view.getByLabelText("Row 1, column 1: Click"));
+  await fireEvent.press(view.getByText("Move button"));
+  await fireEvent.press(view.getByLabelText("Row 1, column 3: Empty"));
+  expect(view.queryByText("Choose action")).toBeNull();
+  expect(view.getByLabelText("Row 1, column 3: Click")).toBeTruthy();
+  expect(command).not.toHaveBeenCalled();
+});

@@ -256,3 +256,48 @@ it("keeps live typing mounted and sends no commands while editing or saving keys
   await view.unmount();
   session.dispose();
 });
+it.each(["typing", "window"] as const)(
+  "keeps repeat stop outside customized %s grids",
+  async (surface) => {
+    const send = jest.fn(async () => true);
+    const session = new RemoteSession(
+      { send } as unknown as ConnectionManager,
+      null,
+    );
+    const stop = jest.spyOn(session, "stopRepeat").mockResolvedValue();
+    jest
+      .spyOn(session, "snapshot")
+      .mockReturnValue({
+        repeat: "mouse.scroll",
+        dragging: false,
+        modifiers: [],
+        streamOpen: false,
+      });
+    const view = await render(
+      surface === "typing" ? (
+        <TypingSurface session={session} mode="draft" draft="fixture" />
+      ) : (
+        <WindowSurface
+          session={session}
+          state={session.snapshot()}
+          platform="windows"
+        />
+      ),
+    );
+    expect(view.getByText(/Movement is repeating/)).toBeTruthy();
+    const edit = view
+      .getAllByRole("button")
+      .filter((button) =>
+        String(button.props.accessibilityLabel).startsWith("Edit "),
+      );
+    expect(edit.length).toBeGreaterThan(0);
+    expect(
+      edit.every((button) => button.props.accessibilityState.disabled),
+    ).toBe(true);
+    await fireEvent.press(view.getByLabelText("Stop movement"));
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(send).not.toHaveBeenCalled();
+    await view.unmount();
+    session.dispose();
+  },
+);

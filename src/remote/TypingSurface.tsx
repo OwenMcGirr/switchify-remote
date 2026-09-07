@@ -3,33 +3,28 @@ import { TextInput, View } from "react-native";
 
 import { ControlButton } from "@/components/ControlButton";
 import { StatusBadge } from "@/components/StatusBadge";
-import { commandPayloads } from "@/domain/protocol/commands";
 import { preferencesStore, type TypingMode } from "@/storage/PreferencesStore";
 import { useTheme } from "@/theme/ThemeContext";
 import { scheduleLiveTextInputFocus } from "./focusLiveTextInput";
 import { LiveTypingController } from "./LiveTypingController";
-import { SurfaceLayout, type LayoutControl } from "@/layouts/SurfaceLayout";
+import { SurfaceLayout } from "@/layouts/SurfaceLayout";
+import type { PcPlatform } from "@/domain/protocol/types";
+import { useRemoteActions } from "./actions/useRemoteActions";
+import { RepeatStatus } from "./RepeatStatus";
 import type { RemoteSession } from "./RemoteSession";
-
-const keys = [
-  "Backspace",
-  "Enter",
-  "Escape",
-  "Tab",
-  "ArrowLeft",
-  "ArrowUp",
-  "ArrowDown",
-  "ArrowRight",
-];
 
 export function TypingSurface({
   session,
   mode,
   draft,
+  platform = "windows",
+  physicalSwitchStopAvailable = true,
 }: {
   session: RemoteSession;
   mode: TypingMode;
   draft: string;
+  platform?: PcPlatform;
+  physicalSwitchStopAvailable?: boolean;
 }) {
   const [liveText, setLiveText] = useState("");
   const [liveFailure, setLiveFailure] = useState<"text" | "enter" | null>(null);
@@ -51,8 +46,6 @@ export function TypingSurface({
     "keyboard.textStream.close",
   );
   const draftSupported = session.supports("keyboard.typeText");
-  const keySupported =
-    mode === "live" ? liveSupported : session.supports("keyboard.key");
   const reconcileLive = (next: string) => {
     const revision = ++liveRevision.current;
     setLiveFailure(null);
@@ -122,42 +115,12 @@ export function TypingSurface({
       liveSubmittingRef.current = false;
     };
   }, []);
-  const sendDraft = async () => {
-    if (!draft || !draftSupported) return;
-    const [type, payload] = commandPayloads.typeText(draft);
-    if (await session.command(type, payload))
-      await preferencesStore.update({ draft: "" });
-  };
-  const controls: LayoutControl[] = keys.map((key) => ({
-    id: `key.${key}`,
-    size: "key",
-    label: key.replace("Arrow", ""),
-    disabled:
-      !keySupported || (mode === "live" && liveSubmitting && key === "Enter"),
-    onPress: () => {
-      if (mode === "live") {
-        if (key === "Enter") void submitLive();
-        else void session.streamKey(key);
-      } else {
-        const [type, payload] = commandPayloads.key(key);
-        void session.command(type, payload);
-      }
-    },
-  }));
-  controls.push(
-    {
-      id: "draft.clear",
-      label: "Clear",
-      disabled: mode !== "draft" || !draft,
-      onPress: () => void preferencesStore.update({ draft: "" }),
-    },
-    {
-      id: "draft.send",
-      label: "Send to PC",
-      disabled: mode !== "draft" || !draft || !draftSupported,
-      onPress: () => void sendDraft(),
-    },
-  );
+  const controls = useRemoteActions({
+    surface: "typing",
+    session,
+    platform,
+    typing: { mode, draft, submitting: liveSubmitting, submitLive },
+  });
   const sessionState = session.snapshot();
   const blocked = liveSubmitting
     ? "Finish sending Enter before editing."
@@ -168,6 +131,11 @@ export function TypingSurface({
       : null;
   return (
     <View style={{ gap: spacing.md }}>
+      <RepeatStatus
+        session={session}
+        state={sessionState}
+        physicalSwitchStopAvailable={physicalSwitchStopAvailable}
+      />
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
         <ControlButton
           label="Type live"
@@ -255,14 +223,14 @@ export function TypingSurface({
         <SurfaceLayout
           surface="typing"
           section="draft"
-          controls={controls.slice(-2)}
+          controls={controls}
           blocked={blocked}
         />
       ) : null}
       <SurfaceLayout
         surface="typing"
         section="keys"
-        controls={controls.slice(0, keys.length)}
+        controls={controls}
         blocked={blocked}
       />
     </View>

@@ -211,7 +211,7 @@ describe('capability-driven remote surfaces', () => {
     expect(view.getByLabelText('Ctrl').props.accessibilityState.disabled).toBe(false);
     expect(view.getByLabelText('Next app').props.accessibilityState.disabled).toBe(true);
     expect(view.getByLabelText('A').props.accessibilityState.disabled).toBe(true);
-    expect(view.getByLabelText('Left').props.accessibilityState.disabled).toBe(true);
+    expect(view.getByLabelText('Move pointer to monitor left').props.accessibilityState.disabled).toBe(true);
   });
 
   it('disables every action category when no commands are advertised', async () => {
@@ -225,7 +225,7 @@ describe('capability-driven remote surfaces', () => {
       expect(typing.getByLabelText(label).props.accessibilityState.disabled).toBe(true);
     }
     const window = await render(<WindowSurface session={session} state={session.snapshot()} platform="windows" />);
-    for (const label of ['Ctrl', 'Alt', 'Shift', 'Start', 'Next app', 'Previous app', 'Task view', 'Show desktop', 'Minimize', 'Maximize', 'Close', 'A', 'C', 'V', 'X', 'Left', 'Up', 'Down', 'Right']) {
+    for (const label of ['Ctrl', 'Alt', 'Shift', 'Start', 'Next app', 'Previous app', 'Task view', 'Show desktop', 'Minimize', 'Maximize', 'Close', 'A', 'C', 'V', 'X', 'Move pointer to monitor left', 'Move pointer to monitor up', 'Move pointer to monitor down', 'Move pointer to monitor right']) {
       expect(window.getByLabelText(label).props.accessibilityState.disabled).toBe(true);
     }
   });
@@ -306,7 +306,7 @@ describe('capability-driven remote surfaces', () => {
     const session = new RemoteSession(actionManager, profile(commands));
     const press = async (control: RenderResult, label: string) => { await act(async () => { fireEvent.press(control.getByLabelText(label)); await Promise.resolve(); }); };
     const mouse = await render(<MouseSurface session={session} state={session.snapshot()} />);
-    for (const label of ['Move up and left', 'Move up', 'Move up and right', 'Move left', 'Left click', 'Move right', 'Move down and left', 'Move down', 'Move down and right', 'Double click', 'Right click', 'Start drag', 'Scroll up', 'Scroll down', 'Slower', 'Faster', 'Left', 'Up', 'Down', 'Right']) await press(mouse, label);
+    for (const label of ['Move up and left', 'Move up', 'Move up and right', 'Move left', 'Left click', 'Move right', 'Move down and left', 'Move down', 'Move down and right', 'Double click', 'Right click', 'Start drag', 'Scroll up', 'Scroll down', 'Slower', 'Faster', 'Move pointer to monitor left', 'Move pointer to monitor up', 'Move pointer to monitor down', 'Move pointer to monitor right']) await press(mouse, label);
     await act(async () => { mouse.rerender(<MouseSurface session={session} state={session.snapshot()} />); });
     await press(mouse, 'End drag');
     const directSession = new RemoteSession(actionManager, profile(commands.filter((type) => !type.startsWith('mouse.repeat.'))));
@@ -324,7 +324,7 @@ describe('capability-driven remote surfaces', () => {
     await press(liveTyping, 'Write a draft');
 
     const window = await render(<WindowSurface session={session} state={session.snapshot()} platform="windows" />);
-    for (const label of ['Ctrl', 'Alt', 'Shift', 'Start', 'Next app', 'Previous app', 'Task view', 'Show desktop', 'Minimize', 'Maximize', 'Close', 'A', 'C', 'V', 'X', 'Left', 'Up', 'Down', 'Right']) await press(window, label);
+    for (const label of ['Ctrl', 'Alt', 'Shift', 'Start', 'Next app', 'Previous app', 'Task view', 'Show desktop', 'Minimize', 'Maximize', 'Close', 'Ctrl+Alt+Shift+Start+A', 'C', 'V', 'X', 'Move pointer to monitor left', 'Move pointer to monitor up', 'Move pointer to monitor down', 'Move pointer to monitor right']) await press(window, label);
     await waitFor(() => expect(new Set(send.mock.calls.map(([type]) => type))).toEqual(new Set(commands)));
   });
 });

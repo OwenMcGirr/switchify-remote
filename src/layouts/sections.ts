@@ -1,3 +1,4 @@
+import { canPlaceAction } from "@/remote/actions/catalog";
 import { computeGridColumns } from "@/components/ResponsiveGrid";
 import { type ButtonLayout, type LayoutSurface, validLayout } from "./model";
 
@@ -152,8 +153,7 @@ export function validSectionLayout(
 ): value is ButtonLayout {
   const definition = getSection(surface, section);
   if (!definition || !validLayout(value)) return false;
-  const allowed = new Set(definition.groups.flatMap((group) => [...group.ids]));
-  return value.cells.every((id) => id === null || allowed.has(id));
+  return value.cells.every((id) => id === null || canPlaceAction(id, surface));
 }
 
 /** Capture responsive row boundaries; shorter rows retain explicit empty cells. */

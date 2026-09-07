@@ -56,7 +56,7 @@ it("falls back independently for bad sections, duplicate IDs and foreign buttons
         mouse: {
           speed,
           clicks: { columns: 1, cells: ["click.double", "click.double"] },
-          movement: click,
+          movement: initialLayout(["draft.clear"]),
           unknown: speed,
         },
         typing: { keys: initialLayout(["key.Enter"]) },
@@ -69,9 +69,9 @@ it("falls back independently for bad sections, duplicate IDs and foreign buttons
     mouse: { speed },
     typing: { keys: initialLayout(["key.Enter"]) },
   });
-  await expect(store.save("mouse", "speed", click)).rejects.toThrow(
-    "Invalid section layout",
-  );
+  await expect(
+    store.save("mouse", "speed", initialLayout(["draft.clear"])),
+  ).rejects.toThrow("Invalid section layout");
   await expect(store.save("mouse", "unknown", null)).rejects.toThrow(
     "Invalid section layout",
   );
@@ -92,4 +92,30 @@ it("snapshots caller data before an asynchronous write", async () => {
   layout.cells[0] = "key.Enter";
   await pending;
   expect(store.snapshot().mouse?.clicks).toEqual(click);
+});
+it("retains previous v2 grids and cross-surface actions through restart with duplicates allowed only across sections", async () => {
+  const layouts = {
+    mouse: {
+      movement: { columns: 3, cells: ["move.0.0", "move.1.0", null] },
+      clicks: { columns: 1, cells: ["key.Enter", null, "monitor.left"] },
+    },
+    window: { windows: { columns: 2, cells: ["key.Enter", "scroll.up"] } },
+    typing: {
+      keys: { columns: 1, cells: ["draft.send", "window.closeFocused"] },
+    },
+  };
+  await AsyncStorage.setItem(
+    "switchify.remote.layouts.v2",
+    JSON.stringify({ version: 2, layouts }),
+  );
+  const store = new LayoutStore();
+  await store.load();
+  expect(store.snapshot()).toEqual(layouts);
+  await store.save("mouse", "speed", { columns: 1, cells: ["key.Enter"] });
+  const restarted = new LayoutStore();
+  await restarted.load();
+  expect(restarted.snapshot()).toEqual({
+    ...layouts,
+    mouse: { ...layouts.mouse, speed: { columns: 1, cells: ["key.Enter"] } },
+  });
 });
